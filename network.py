@@ -125,7 +125,7 @@ class SummarizationNetwork(object):
 
         self.f_conditional_probability_distribution = theano.function([x, y, y_position], dist)
 
-        return dist[y_position]
+        return T.dot(dist.T, y[:, y_position])
 
     def negative_log_likelihood(self, x, y):
         # Here, y is an entire summary and x is an entire text.
@@ -172,12 +172,23 @@ class SummarizationNetwork(object):
 
     def initialize(self):
         grad_update, update = self.train_model_func(self.batch_size)
+        self.gradient_update = grad_update
+        self.cost_update = update
         return grad_update, update
 
     def save(self, name):
         f = open(name, 'wb')
         pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
         f.close()
+
+    def train_one_epoch(self, documents, summaries):
+        num_data_points = documents.shape[0]
+        assert(num_data_points == summaries.shape[0])
+        num_batches = num_data_points / self.batch_size
+        for i in range(num_batches):
+            end = (i+1) * self.batch_size
+            if end > num_data_points: end = num_data_points
+            cur_documents = documents[i*self.batch_size:end, :, :]
 
     def load(self, name):
         if os.path.isfile(name):
@@ -189,4 +200,3 @@ class SummarizationNetwork(object):
         else:
             print("tried to load network -- no file found")
 
-s = SummarizationNetwork()

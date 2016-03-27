@@ -59,20 +59,20 @@ input_sentence_length = input_tensor.shape[2]
 print(input_sentence_length)
 s = SummarizationNetwork(vocab_size = tv.vocab_size(), context_size = context_length,
            input_sentence_length = input_sentence_length)
-s.load('yohgnet.network')
+#s.load('yohgnet.network')
 print("Network built.")
 
 print("building func...")
 grad_shared, update = s.initialize()
 cpd = s.f_conditional_probability_distribution
-idx = 4 
+idx = 1 
 idx += context_length
 ex_idx = 0
 print(cpd(padded_inputs[ex_idx], padded_summaries[ex_idx], idx))
 
-#for i in range(150):
-#    cost = grad_shared(input_tensor, summary_tensor)
-#    update(0.02)
+for i in range(200):
+    cost = grad_shared(input_tensor, summary_tensor)
+    update(0.05)
     #print(cost)
 print("update done")
 
@@ -84,4 +84,6 @@ for i in range(dist.shape[0]):
     print(dist[i, 0], rm[i])
 print(inputs[0])
 print(summaries[0])
-s.save('yohgnet.network')
+
+theano.printing.pydotprint(cpd, outfile='network_graph.png', var_with_name_simple=True)
+#s.save('yohgnet.network')

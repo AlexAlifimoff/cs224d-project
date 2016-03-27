@@ -14,7 +14,11 @@ class TextVectorizer(object):
         self.tokenizer = TweetTokenizer(preserve_case = self.params["preserve_case"]) 
         self.last_unassigned_index = 0
 
-
+    def generate_reverse_mapping(self):
+        rm = {}
+        for token, val in self.mapping.items():
+            rm[val] = token
+        return rm 
     def vectorize(self, text):
         tokenized_text = self.tokenizer.tokenize(text)
         vectorized_text = []

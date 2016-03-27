@@ -3,6 +3,8 @@ import theano.tensor as T
 from theano.tensor.shared_randomstreams import RandomStreams
 import numpy as np
 import optimisers
+from six.moves import cPickle as pickle
+import os
 
 class EmbeddingsLayer(object):
     #
@@ -99,7 +101,7 @@ class SummarizationNetwork(object):
         print("vocab size", self.vocab_size)
 
         self.summary_length = 8 
-        self.batch_size = 2
+        self.batch_size = 3 
 
     def conditional_probability_distribution(self, x, y):
         el = EmbeddingsLayer(y, self.context_size, self.embedding_size,
@@ -109,14 +111,21 @@ class SummarizationNetwork(object):
         enc_bow = BagOfWordsEncoder(x, y, self.hidden_layer_size,
                 self.input_sentence_length, self.vocab_size, self.context_size)
         output_layer = OutputLayer(enc_bow, hl_1, self.vocab_size, self.hidden_layer_size)
+        self.layers = [el, hl_1, enc_bow, output_layer]
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output
         self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output)
         return output_layer.output
         
     def conditional_probability(self, x, y, y_position):
-        return self.conditional_probability_distribution(x,
-                y[:, y_position-self.context_size:y_position])[y_position]
+                
+        dist = self.conditional_probability_distribution(x,
+                y[:, y_position-self.context_size:y_position])
+
+
+        self.f_conditional_probability_distribution = theano.function([x, y, y_position], dist)
+
+        return dist[y_position]
 
     def negative_log_likelihood(self, x, y):
         # Here, y is an entire summary and x is an entire text.
@@ -141,8 +150,12 @@ class SummarizationNetwork(object):
         document_range = T.arange(0, batch_size)
         func = lambda i, documents, summaries: T.sum(self.negative_log_likelihood(documents[i,:,:],
                                                                     summaries[i, :, :]), axis=1)
-        probs, _ = theano.scan(func, sequences=document_range,
-                                  non_sequences=[documents, summaries], n_steps=batch_size)
+        func2 = lambda document, summary: T.sum(self.negative_log_likelihood(document,
+                                                                    summary), axis=1)
+ 
+
+        probs, _ = theano.scan(func2, sequences=[documents, summaries],
+                                  non_sequences=[])
         return probs.sum() 
 
     def train_model_func(self, batch_size):
@@ -150,7 +163,7 @@ class SummarizationNetwork(object):
         summaries = T.tensor3('summaries')
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         params = {p.name: p for p in self.params} 
-        grads = T.grad(cost, self.params)
+        grads = T.grad(cost, list(params.values()))
 
         # learning rate
         lr = T.scalar(name='lr')
@@ -160,5 +173,20 @@ class SummarizationNetwork(object):
     def initialize(self):
         grad_update, update = self.train_model_func(self.batch_size)
         return grad_update, update
+
+    def save(self, name):
+        f = open(name, 'wb')
+        pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
+        f.close()
+
+    def load(self, name):
+        if os.path.isfile(name):
+            f = open(name, 'rb')
+            s = pickle.load(f)
+            f.close()
+            print("network loaded succesfully")
+            return s
+        else:
+            print("tried to load network -- no file found")
 
 s = SummarizationNetwork()

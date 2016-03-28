@@ -12,12 +12,22 @@ def max_dimensions(matrices):
         dims = (max(dims[0], m.shape[0]), max(dims[1], m.shape[1]))
     return dims
 
+def maxlen(lists):
+    return len(max(lists, key = lambda x: len(x)))
+
 def pad_list_of_matrices(matrices):
     padded = []
     max_dims = max_dimensions(matrices)
     return [np.pad(m, [(0, max_dims[0] - m.shape[0]), (0, max_dims[1] - m.shape[1])],
                     'constant', constant_values=(0,0)) for m in matrices]
 
+def pad_list_of_indices(matrices, endtok):
+    padded = []
+    max_dims = maxlen(matrices)
+    print("max len:", max_dims)
+    print(matrices[0])
+    return [m + (max_dims - len(m)) * [endtok] for m in matrices ]
+    
 params = {"preserve_case": False}
 tv = TextVectorizer(params)
 
@@ -36,6 +46,7 @@ input3 = "The Kansas Jayhawks are a basketball team representing the University 
           They are located in Lawrence, Kansas and their stadium is Allen Fieldhouse."
 summary3 = "The Kansas Jayhawks are a basketball team."
 
+
 summary = ''.join(["PAD "] * context_length) + summary
 summary2 = ''.join(["PAD "] * context_length) + summary2
 summary3 = ''.join(["PAD "] * context_length) + summary3
@@ -46,14 +57,25 @@ inputs = [input, input2, input3]
 v_summaries = [tv.vectorize(i) for i in summaries]
 v_inputs = [tv.vectorize(i) for i in inputs]
 
+endtok = tv.vocab_size()
+tv.vectorize("endtok")
+
+v_summaries = pad_list_of_indices(v_summaries, endtok)
+v_inputs = pad_list_of_indices(v_inputs, endtok)
+
 sm_inputs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_inputs]
 sm_summs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_summaries]
 
-padded_inputs = pad_list_of_matrices(sm_inputs)
-padded_summaries = pad_list_of_matrices(sm_summs)
+padded_inputs, padded_summaries = sm_inputs, sm_summs
+
+#padded_inputs = pad_list_of_matrices(sm_inputs)
+#padded_summaries = pad_list_of_matrices(sm_summs)
 
 input_tensor = np.stack(padded_inputs, axis = 0)
 summary_tensor = np.stack(padded_summaries, axis = 0)
+
+#print(input_tensor[0].shape)
+print(input_tensor)
 input_sentence_length = input_tensor.shape[2] 
 
 print(input_sentence_length)
@@ -68,7 +90,7 @@ cpd = s.f_conditional_probability_distribution
 idx = 1 
 idx += context_length
 ex_idx = 0
-print(cpd(padded_inputs[ex_idx], padded_summaries[ex_idx], idx))
+#print(cpd(padded_inputs[ex_idx], padded_summaries[ex_idx], idx))
 
 for i in range(200):
     cost = grad_shared(input_tensor, summary_tensor)
@@ -85,5 +107,4 @@ for i in range(dist.shape[0]):
 print(inputs[0])
 print(summaries[0])
 
-theano.printing.pydotprint(cpd, outfile='network_graph.png', var_with_name_simple=True)
 #s.save('yohgnet.network')

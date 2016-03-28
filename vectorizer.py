@@ -19,6 +19,7 @@ class TextVectorizer(object):
         for token, val in self.mapping.items():
             rm[val] = token
         return rm 
+
     def vectorize(self, text):
         tokenized_text = self.tokenizer.tokenize(text)
         vectorized_text = []

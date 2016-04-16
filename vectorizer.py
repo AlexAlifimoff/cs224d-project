@@ -31,7 +31,7 @@ class TextVectorizer(object):
             else:
                 v = self.mapping[token]
             vectorized_text.append(v)
-        self.index_vector_to_sparse_matrix(vectorized_text) 
+        #self.index_vector_to_sparse_matrix(vectorized_text) 
         return vectorized_text
 
     def vocab_size(self):

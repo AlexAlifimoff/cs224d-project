@@ -4,7 +4,3 @@ and summaries with different lengths. When we pad the matrices
 that represent the documents, what should the padding vector look like?
 Does it have its own token, or should it simply be a column of zeros?
 
-Sparse tensor representations... currently have to use a dense matrix
-as an input since there is no 3-tensor sparse representation...
-
-

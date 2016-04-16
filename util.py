@@ -75,11 +75,14 @@ class DataProcessor(object):
 
         self.input_sentence_length = len(texts[0])
 
-        for summ, text in zip(summs, texts):
-            summ_matrices.append(vec_to_sm(summ).toarray())
-            text_matrices.append(vec_to_sm(text).toarray())
+        #for summ, text in zip(summs, texts):
+        #    print(summ)
+        #    print(text)
+        #    summ_matrices.append(vec_to_sm(summ).toarray())
+        #    text_matrices.append(vec_to_sm(text).toarray())
 
-        return np.stack(summ_matrices, axis = 0), np.stack(text_matrices, axis = 0)
+        #return np.stack(summ_matrices, axis = 0), np.stack(text_matrices, axis = 0)
+        return np.matrix(summs), np.matrix(texts)
 
 if __name__ == "__main__":
     dp = DataProcessor()
@@ -109,7 +112,10 @@ if __name__ == "__main__":
         print(cost)
     print("update done")
 
-    dist = cpd(input_tensor[ex_idx, : , :], summary_tensor[ex_idx, :, :], idx)
+    inpt = input_tensor[ex_idx, :].A1.astype('int32')
+    summ = summary_tensor[ex_idx, :].A1.astype('int32')
+
+    dist = cpd(inpt, summ, idx)
 
     rm = dp.vectorizer.generate_reverse_mapping()
     indices = np.argsort(dist.T)[:25]

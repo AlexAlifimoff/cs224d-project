@@ -63,20 +63,35 @@ tv.vectorize("endtok")
 v_summaries = pad_list_of_indices(v_summaries, endtok)
 v_inputs = pad_list_of_indices(v_inputs, endtok)
 
-sm_inputs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_inputs]
-sm_summs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_summaries]
+print("summaries")
+for s in v_summaries: print(s, len(s))
 
-padded_inputs, padded_summaries = sm_inputs, sm_summs
+print("inputs")
+for i in v_inputs: print(i, len(i))
+
+print(v_inputs)
+
+#sm_inputs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_inputs]
+#sm_summs = [tv.index_vector_to_sparse_matrix(i).toarray() for i in v_summaries]
+
+#padded_inputs, padded_summaries = sm_inputs, sm_summs
 
 #padded_inputs = pad_list_of_matrices(sm_inputs)
 #padded_summaries = pad_list_of_matrices(sm_summs)
 
-input_tensor = np.stack(padded_inputs, axis = 0)
-summary_tensor = np.stack(padded_summaries, axis = 0)
+#input_tensor = np.stack(padded_inputs, axis = 0)
+#summary_tensor = np.stack(padded_summaries, axis = 0)
 
 #print(input_tensor[0].shape)
-print(input_tensor)
-input_sentence_length = input_tensor.shape[2] 
+#print(input_tensor)
+input_sentence_length = len(v_inputs[0]) 
+print(len(v_inputs))
+print(len(v_inputs[0]))
+print(v_inputs[0])
+
+v_summaries = np.matrix(v_summaries)
+v_inputs = np.matrix(v_inputs)
+
 
 print(input_sentence_length)
 s = SummarizationNetwork(vocab_size = tv.vocab_size(), context_size = context_length,
@@ -93,13 +108,17 @@ ex_idx = 0
 #print(cpd(padded_inputs[ex_idx], padded_summaries[ex_idx], idx))
 
 for i in range(200):
-    cost = grad_shared(input_tensor, summary_tensor)
-    update(0.05)
+    cost = grad_shared(v_inputs, v_summaries)
+    update(0.01)
     #print(cost)
 print("update done")
 
 print("cpd...")
-dist = cpd(padded_inputs[ex_idx], padded_summaries[ex_idx], idx)
+ipt = v_inputs[ex_idx, :].A1.astype('int32')
+print(ipt)
+summ = v_summaries[ex_idx, :].A1.astype('int32')
+print(summ)
+dist = cpd(ipt,summ, idx)
 
 rm = tv.generate_reverse_mapping()
 for i in range(dist.shape[0]):

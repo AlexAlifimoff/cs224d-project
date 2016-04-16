@@ -10,7 +10,7 @@ class EmbeddingsLayer(object):
     #
     # input_matrix is v-by-c array, with v being size of vocab and c size of context
     #
-    def __init__(self, input_matrix, context_size, embedding_size, vocabulary_size, flatten = True, emb_name = 'E'):
+    def __init__(self, input_vec, context_size, embedding_size, vocabulary_size, flatten = True, emb_name = 'E'):
         value = np.random.uniform(low=-0.02, high=0.02, size=(embedding_size, vocabulary_size))
         self.E = theano.shared(
                 value = value.astype(theano.config.floatX),
@@ -18,11 +18,15 @@ class EmbeddingsLayer(object):
                 borrow = True
                 )
 
-        self.input = input_matrix 
+        self.input = input_vec 
 
         self.params = [self.E]
 
-        self._output_function = T.dot(self.E, input_matrix)
+        self._output_function = self.E[:,input_vec]
+        print("flatten:", flatten)
+        print("embedding_size", embedding_size)
+        print("vocab_size", vocabulary_size)
+        print("context_size", context_size)
         if flatten:
             self.output = T.reshape(self._output_function, (embedding_size * context_size, 1))
         else:
@@ -49,11 +53,13 @@ class HiddenLayer(object):
 
 class BagOfWordsEncoder(object):
     def __init__(self, x, y, embedding_size, num_input_words, vocab_sz, y_context_sz):
+        print("building embeddings layer with expected output...", embedding_size, "by", num_input_words)
         self.EmbeddingsLayer = EmbeddingsLayer(x, num_input_words, embedding_size,
                 vocab_sz, flatten = False, emb_name = 'F')
 
         p = np.divide(np.ones(num_input_words), num_input_words)
         print("p length", num_input_words)
+        print("embedding_size", embedding_size)
         p = T.as_tensor_variable(p) 
         self.input = x
         self.params = self.EmbeddingsLayer.params
@@ -114,18 +120,19 @@ class SummarizationNetwork(object):
         self.layers = [el, hl_1, enc_bow, output_layer]
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output
-        self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output)
+        self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output, allow_input_downcast=True)
         return output_layer.output
         
     def conditional_probability(self, x, y, y_position):
                 
         dist = self.conditional_probability_distribution(x,
-                y[:, y_position-self.context_size:y_position])
+                y[y_position-self.context_size:y_position])
 
 
         self.f_conditional_probability_distribution = theano.function([x, y, y_position], dist)
 
-        return T.dot(dist.T, y[:, y_position])
+
+        return dist[y[y_position]]
 
     def negative_log_likelihood(self, x, y):
         # Here, y is an entire summary and x is an entire text.
@@ -148,19 +155,21 @@ class SummarizationNetwork(object):
 
     def negative_log_likelihood_batch(self, documents, summaries, batch_size):
         document_range = T.arange(0, batch_size)
-        func = lambda i, documents, summaries: T.sum(self.negative_log_likelihood(documents[i,:,:],
-                                                                    summaries[i, :, :]), axis=1)
+        func = lambda i, documents, summaries: T.sum(self.negative_log_likelihood(documents[i, :],
+            summaries[i, :]), axis=1)
         func2 = lambda document, summary: T.sum(self.negative_log_likelihood(document,
                                                                     summary), axis=1)
  
 
-        probs, _ = theano.scan(func2, sequences=[documents, summaries],
-                                  non_sequences=[])
+        #probs, _ = theano.scan(func2, sequences=[documents.T, summaries.T],
+        #                          non_sequences=[])
+
+        probs, _ = theano.scan(func, sequences=[document_range], non_sequences=[documents,summaries])
         return probs.sum() 
 
     def train_model_func(self, batch_size):
-        docs = T.tensor3('docs')
-        summaries = T.tensor3('summaries')
+        docs = T.imatrix('docs')
+        summaries = T.imatrix('summaries')
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         params = {p.name: p for p in self.params} 
         grads = T.grad(cost, list(params.values()))

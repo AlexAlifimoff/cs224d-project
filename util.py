@@ -5,6 +5,8 @@ import numpy as np
 import network
 
 def max_dimensions(matrices):
+    if isinstance(matrices[0], list):
+        return max([len(m) for m in matrices])
     dims = (0, 0)
     for m in matrices:
         dims = (max(dims[0], m.shape[0]), max(dims[1], m.shape[1]))
@@ -13,17 +15,18 @@ def max_dimensions(matrices):
 def maxlen(lists):
     return len(max(lists, key = lambda x: len(x)))
 
-def pad_list_of_matrices(matrices):
+def pad_list_of_matrices(matrices, max_dims = None):
     padded = []
-    max_dims = max_dimensions(matrices)
+    if max_dims is None: max_dims = max_dimensions(matrices)
     return [np.pad(m, [(0, max_dims[0] - m.shape[0]), (0, max_dims[1] - m.shape[1])],
                     'constant', constant_values=(0,0)) for m in matrices]
 
-def pad_list_of_indices(matrices, endtok):
+def pad_list_of_indices(matrices, endtok, pad_length = None):
     padded = []
-    max_dims = maxlen(matrices)
-    print("max len:", max_dims)
-    print(matrices[0])
+    if pad_length is None: max_dims = maxlen(matrices)
+    else: max_dims = pad_length
+    #print("max len:", max_dims)
+    #print(matrices[0])
     return [m + (max_dims - len(m)) * [endtok] for m in matrices ]
 
 class DataProcessor(object):
@@ -31,6 +34,8 @@ class DataProcessor(object):
         vparams = {"preserve_case": False}
         self.vectorizer = vectorizer.TextVectorizer(vparams) 
         self.pad_token = "PAD"
+        self.end_token = "endtok"
+        self.end_token_value = self.vectorizer.vectorize(self.end_token)[0]
         self.pad_length = 3
         self.summaries = []
         self.inputs = []
@@ -61,27 +66,48 @@ class DataProcessor(object):
             except json.decoder.JSONDecodeError as err:
                 print("decode error.")
 
-    def get_tensors_for_batch(self, batch_id, num_batches):
+    def get_batch_size(self, num_batches):
+        return int( len(self.summaries) / num_batches)
+
+    def get_num_batches(self, batch_size):
+        return int( len(self.summaries) / batch_size)
+
+    def calculate_network_parameters(self):
+        summary_dims = max_dimensions(self.summaries)
+        input_dims = max_dimensions(self.inputs)
+
+        self.summary_max_length = summary_dims
+        self.input_max_length = input_dims
+
+        print("summary dims", summary_dims)
+        print("input dims", input_dims)
+
+        self.input_sentence_length = input_dims
+
+    def get_tensors_for_batch(self, batch_id, num_batches=None, batch_size=None, pad_length = None):
+        #if self.input_sentence_length is not None and pad_length is None:
+        #    pad_length = self.input_sentence_length
+        #    print("setting pad length to ", pad_length)
         num_examples = len(self.summaries)
-        batch_size = int(num_examples / num_batches)
-        summ_matrices = []
-        text_matrices = []
+        if ((batch_size is None and num_batches is None) or  
+                (batch_size is not None and num_batches is not None)):
+            raise Exception("Only one of batch_size or num_batches must be non-None")
+        if num_batches is not None: batch_size = int(num_examples / num_batches)
+        elif batch_size is not None: num_batches = int(num_examples / batch_size)
         vec_to_sm = self.vectorizer.index_vector_to_sparse_matrix
-        endtok = self.vectorizer.vocab_size()
-        self.vectorizer.vectorize("endtok")
+        #endtok = self.vectorizer.vocab_size()
+        #self.vectorizer.vectorize("endtok")
         start, end = batch_id * batch_size, (batch_id + 1) * batch_size
-        summs = pad_list_of_indices(self.summaries[start:end], endtok)
-        texts = pad_list_of_indices(self.inputs[start:end], endtok)
+        print(start, end)
+        summs = pad_list_of_indices(self.summaries[start:end], self.end_token_value, self.summary_max_length)
+        texts = pad_list_of_indices(self.inputs[start:end], self.end_token_value, self.input_max_length)
 
-        self.input_sentence_length = len(texts[0])
-
-        #for summ, text in zip(summs, texts):
-        #    print(summ)
-        #    print(text)
-        #    summ_matrices.append(vec_to_sm(summ).toarray())
-        #    text_matrices.append(vec_to_sm(text).toarray())
-
-        #return np.stack(summ_matrices, axis = 0), np.stack(text_matrices, axis = 0)
+        #self.input_sentence_length = len(texts[0])
+        #print(type(texts))
+        #print(texts)
+        #print(type(texts[0]))
+        #for t in texts:
+        #    print(len(t))
         return np.matrix(summs), np.matrix(texts)
 
 if __name__ == "__main__":

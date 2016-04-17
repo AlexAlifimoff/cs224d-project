@@ -29,6 +29,54 @@ def pad_list_of_indices(matrices, endtok, pad_length = None):
     #print(matrices[0])
     return [m + (max_dims - len(m)) * [endtok] for m in matrices ]
 
+def load_embeddings_from_glove(dimension, vectorizer):
+    valid_dimensions = [50, 100, 200, 300]
+    assert(dimension in valid_dimensions)
+
+    glove_embeddings = {}
+    with open("glove.6B/glove.6B.{}d.txt".format(dimension), 'r') as embfile:
+        for line in embfile:
+            line = line.split(" ")
+            vec = list(map(float, line[1:]))
+            glove_embeddings[line[0]] = vec
+            assert(len(vec) == dimension)
+
+
+    vocab_size = vectorizer.vocab_size()
+    mapping = vectorizer.mapping
+
+    # embedding size by vocab size
+    emb_matrix = np.zeros( (dimension, vocab_size) )
+
+    indices_to_replace = []
+    for word, index in mapping.items():
+        try:
+            vec = glove_embeddings[word]
+        except KeyError as e:
+            indices_to_replace.append(index)
+
+        emb_matrix[:, index] = np.array(vec)
+
+    avg_vector = np.mean(emb_matrix, axis = 1)
+
+    for index in indices_to_replace:
+        emb_matrix[:, index] = avg_vector
+
+    print("Number of indices replaced with average:", len(indices_to_replace))
+
+    return emb_matrix
+
+
+    
+
+    indices_to_replace = []
+    with open("glove.6B/glove.6B.{}d.txt".format(dimension), 'r') as embfile:
+        for line in embfile:
+            line = line.split(" ")
+            vec = list(map(float, line[1:]))
+            print(line[0])
+            assert(len(vec) == dimension)
+
 class DataProcessor(object):
     def __init__(self):
         vparams = {"preserve_case": False}
@@ -111,6 +159,8 @@ class DataProcessor(object):
         return np.matrix(summs), np.matrix(texts)
 
 if __name__ == "__main__":
+
+
     dp = DataProcessor()
     dp.load_json_from_folder("../cs224n-project/data/wikipedia")
 
@@ -119,13 +169,18 @@ if __name__ == "__main__":
     print(dp.inputs[-1])
 
     print( dp.vectorizer.vocab_size() )
+
+
+    emb_matrix = load_embeddings_from_glove(50, dp.vectorizer)
+    print(emb_matrix)
+
     summary_tensor, input_tensor = dp.get_tensors_for_batch(0, 1000) 
 
     context_length = dp.pad_length
     input_sentence_length = dp.input_sentence_length
 
     s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size(), context_size = context_length,
-           input_sentence_length = input_sentence_length)
+           input_sentence_length = input_sentence_length, embedding_matrix = embedding_matrix)
     grad_shared, update = s.initialize()
     cpd = s.f_conditional_probability_distribution
     idx = 1 

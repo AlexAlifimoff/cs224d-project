@@ -10,8 +10,10 @@ class EmbeddingsLayer(object):
     #
     # input_matrix is v-by-c array, with v being size of vocab and c size of context
     #
-    def __init__(self, input_vec, context_size, embedding_size, vocabulary_size, flatten = True, emb_name = 'E'):
-        value = np.random.uniform(low=-0.02, high=0.02, size=(embedding_size, vocabulary_size))
+    def __init__(self, input_vec, context_size, embedding_size, vocabulary_size, flatten = True, emb_name = 'E', embedding_matrix = None):
+        if embedding_matrix is None:
+            value = np.random.uniform(low=-0.02, high=0.02, size=(embedding_size, vocabulary_size))
+        else: value = embedding_matrix
         self.E = theano.shared(
                 value = value.astype(theano.config.floatX),
                 name = emb_name,
@@ -52,10 +54,10 @@ class HiddenLayer(object):
         return theano.function( [inpt], self.output )
 
 class BagOfWordsEncoder(object):
-    def __init__(self, x, y, embedding_size, num_input_words, vocab_sz, y_context_sz):
+    def __init__(self, x, y, embedding_size, num_input_words, vocab_sz, y_context_sz, embedding_matrix = None):
         print("building embeddings layer with expected output...", embedding_size, "by", num_input_words)
         self.EmbeddingsLayer = EmbeddingsLayer(x, num_input_words, embedding_size,
-                vocab_sz, flatten = False, emb_name = 'F')
+                vocab_sz, flatten = False, emb_name = 'F', embedding_matrix = embedding_matrix)
 
         p = np.divide(np.ones(num_input_words), num_input_words)
         print("p length", num_input_words)
@@ -71,7 +73,7 @@ class BagOfWordsEncoder(object):
         return theano.function( [x, y], self.output, on_unused_input='ignore' )
 
 class OutputLayer(object):
-    def __init__(self, encoder, h, vocab_sz, hidden_layer_sz):
+    def __init__(self, encoder, h, vocab_sz, hidden_layer_sz, embedding_size):
         self.input = [encoder, h]
         V_value = np.random.uniform(low=-0.02, high=0.02, size=(vocab_sz, hidden_layer_sz))
         self.V = theano.shared(
@@ -79,13 +81,16 @@ class OutputLayer(object):
                     name = 'V', 
                     borrow = True)
 
-        W_value = np.random.uniform(low=-0.02, high=0.02, size=(vocab_sz, hidden_layer_sz))
+        W_value = np.random.uniform(low=-0.02, high=0.02, size=(vocab_sz, embedding_size))
         self.W = theano.shared(
                     value = W_value.astype(theano.config.floatX),
                     name = 'W',
                     borrow = True)
 
-        self.output = T.dot(self.V, h.output) + T.dot(self.W, encoder.output)
+        encoder_output = T.dot(self.W, encoder.output)
+        language_model_output = T.dot(self.V, h.output)
+
+        self.output = encoder_output + language_model_output #T.dot(self.V, h.output) + T.dot(self.W, encoder.output)
         self.output = T.exp(self.output)
 
         self.params = encoder.params + h.params + [self.V, self.W]
@@ -94,8 +99,8 @@ class OutputLayer(object):
         return theano.function( [x, y], self.output )
 
 class SummarizationNetwork(object):
-    def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 2,
-            context_size = 2, hidden_layer_size = 10):
+    def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
+            context_size = 3, hidden_layer_size = 10, embedding_matrix = None):
         self.input_sentence_length = input_sentence_length 
         self.vocab_size = vocab_size 
         self.embedding_size = embedding_size 
@@ -106,17 +111,19 @@ class SummarizationNetwork(object):
         print("input sentence length", self.input_sentence_length)
         print("vocab size", self.vocab_size)
 
+        self.embedding_matrix = embedding_matrix
+
         self.summary_length = 8 
         self.batch_size = 3 
 
     def conditional_probability_distribution(self, x, y):
         el = EmbeddingsLayer(y, self.context_size, self.embedding_size,
-                self.vocab_size, flatten = True)
+                self.vocab_size, flatten = True, embedding_matrix = self.embedding_matrix)
         hl_1 = HiddenLayer(el, self.embedding_size * self.context_size,
                 self.hidden_layer_size)
-        enc_bow = BagOfWordsEncoder(x, y, self.hidden_layer_size,
-                self.input_sentence_length, self.vocab_size, self.context_size)
-        output_layer = OutputLayer(enc_bow, hl_1, self.vocab_size, self.hidden_layer_size)
+        enc_bow = BagOfWordsEncoder(x, y, self.embedding_size,
+                self.input_sentence_length, self.vocab_size, self.context_size, embedding_matrix = self.embedding_matrix)
+        output_layer = OutputLayer(enc_bow, hl_1, self.vocab_size, self.hidden_layer_size, self.embedding_size)
         self.layers = [el, hl_1, enc_bow, output_layer]
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output

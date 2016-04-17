@@ -10,11 +10,16 @@ def train_model(data_folder, epochs, batch_size):
 
     dp.calculate_network_parameters()
 
+    embedding_size = 50
+
+    emb_matrix = util.load_embeddings_from_glove(embedding_size, dp.vectorizer)
+
     input_sentence_length = dp.input_sentence_length
     context_length = dp.pad_length
 
     s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
-            context_size = context_length, input_sentence_length = input_sentence_length)
+            context_size = context_length, input_sentence_length = input_sentence_length,
+            embedding_size = embedding_size, embedding_matrix = emb_matrix)
     grad_shared, update = s.initialize()
     cpd = s.f_conditional_probability_distribution
 
@@ -36,7 +41,7 @@ def train_model(data_folder, epochs, batch_size):
             #print(summaries.shape)
 
             cost = grad_shared(inputs, summaries)
-            update(0.001)
+            update(0.0005)
 
             print(epoch_id, batch_id, cost)
 
@@ -44,19 +49,31 @@ def train_model(data_folder, epochs, batch_size):
             summ = summaries[ex_idx, :].A1.astype('int32')
             print(inpt)
 
-            dist = cpd(inpt, summ, idx)
+            if epoch_id < 10: continue
 
             rm = dp.vectorizer.generate_reverse_mapping()
-            indices = np.argsort(dist.T)[:25]
-            #print(indices)
-            for index in indices[0][-50:]:
-                #print(index)
-                print(dist[index], rm[index])
+
+            for idx in range(3, 10):
+
+                inpt_words = []
+                for i, tk in enumerate(inpt):
+                    inpt_words.append( rm[tk] )
+                    if i >= idx: break
+
+                print(idx, inpt_words)
+
+                dist = cpd(inpt, summ, idx)
+
+                indices = np.argsort(dist.T)[:10]
+                #print(indices)
+                for index in indices[0][-50:]:
+                    #print(index)
+                    print(dist[index], rm[index])
  
 
 
 if __name__ == "__main__":
     data_folder = "../cs224n-project/data/wikipedia"
-    epochs = 10
-    batch_size = 1000
+    epochs = 150
+    batch_size = 500 
     train_model(data_folder, epochs, batch_size)

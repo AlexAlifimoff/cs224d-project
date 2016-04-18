@@ -79,12 +79,31 @@ class AttentionEncoder(object):
 
         x_tilde = self.InputEmbeddingsLayer.output
 
-        self.SummaryEmbeddingsLayer = EmbeddingsLayer(y, y_context_sz, summary_embedding_size, vocab_sz, flatten = False,
+        self.SummaryEmbeddingsLayer = EmbeddingsLayer(y, y_context_sz, summary_embedding_size, vocab_sz, flatten = True,
                 emb_name = 'G')
 
-        y_tilde = self.SummaryEmbeddingsLayer.output
+        P_value = np.random.uniform(low=-0.02, high=0.02, size=(input_embedding_size, y_context_sz * summary_embedding_size))
+        self.P = theano.shared(
+                    value = P_value.astype(theano.config.floatX),
+                    name = 'P', 
+                    borrow = True)
 
+        Q = 2
+
+        m = self.build_attention_convolution_matrix(Q, num_input_words)
+
+        y_tilde = self.SummaryEmbeddingsLayer.output
         p = T.nnet.softmax( T.dot(x_tilde, T.dot(P, y_tilde)) )
+
+    def build_attention_convolution_matrix(self, Q, l):
+        # straight up borrowed from Jencir's initial model
+        assert l >= Q
+        m = np.diagflat([1.] * 1)
+        for i in range(1, Q):
+            m += np.diagflat([1.] * (1 - i), k=i)
+            m += np.diagflat([1.] * (1 - i), k=-i)
+        return m / np.sum(m, axis = 0)
+
 
 class OutputLayer(object):
     def __init__(self, encoder, h, vocab_sz, hidden_layer_sz, embedding_size):
@@ -114,7 +133,7 @@ class OutputLayer(object):
 
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
-            context_size = 3, hidden_layer_size = 10, embedding_matrix = None):
+            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.001):
         self.input_sentence_length = input_sentence_length 
         self.vocab_size = vocab_size 
         self.embedding_size = embedding_size 
@@ -126,6 +145,7 @@ class SummarizationNetwork(object):
         print("vocab size", self.vocab_size)
 
         self.embedding_matrix = embedding_matrix
+        self.l2_coefficient = l2_coefficient
 
         self.summary_length = 8 
         self.batch_size = 3 
@@ -143,8 +163,7 @@ class SummarizationNetwork(object):
         self.embedding_matrices = [enc_bow.EmbeddingsLayer.params[0], el.params[0]]
         self._conditional_probability_distribution = output_layer.output
         self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output, allow_input_downcast=True)
-        return output_layer.output
-        
+        return output_layer.output         
     def conditional_probability(self, x, y, y_position):
                 
         dist = self.conditional_probability_distribution(x,
@@ -192,7 +211,7 @@ class SummarizationNetwork(object):
     def train_model_func(self, batch_size):
         docs = T.imatrix('docs')
         summaries = T.imatrix('summaries')
-        cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
+        cost = self.negative_log_likelihood_batch(docs, summaries, batch_size) + self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
         params = {p.name: p for p in self.params} 
         grads = T.grad(cost, list(params.values()))
 

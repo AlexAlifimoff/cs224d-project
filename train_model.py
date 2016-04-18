@@ -22,6 +22,8 @@ def train_model(data_folder, epochs, batch_size):
             embedding_size = embedding_size, embedding_matrix = emb_matrix)
     grad_shared, update = s.initialize()
     cpd = s.f_conditional_probability_distribution
+    embedding_normalization_function = s.normalize_embeddings_func()
+
 
     idx = 1 
     idx += context_length
@@ -41,7 +43,7 @@ def train_model(data_folder, epochs, batch_size):
             #print(summaries.shape)
 
             cost = grad_shared(inputs, summaries)
-            update(0.0005)
+            update(0.001)
 
             print(epoch_id, batch_id, cost)
 
@@ -69,11 +71,12 @@ def train_model(data_folder, epochs, batch_size):
                 for index in indices[0][-50:]:
                     #print(index)
                     print(dist[index], rm[index])
+        embedding_normalization_function()
  
 
 
 if __name__ == "__main__":
     data_folder = "../cs224n-project/data/wikipedia"
     epochs = 150
-    batch_size = 500 
+    batch_size = 1000 
     train_model(data_folder, epochs, batch_size)

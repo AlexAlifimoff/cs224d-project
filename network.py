@@ -126,6 +126,7 @@ class SummarizationNetwork(object):
         output_layer = OutputLayer(enc_bow, hl_1, self.vocab_size, self.hidden_layer_size, self.embedding_size)
         self.layers = [el, hl_1, enc_bow, output_layer]
         self.params = output_layer.params
+        self.embedding_matrices = [enc_bow.EmbeddingsLayer.params[0], el.params[0]]
         self._conditional_probability_distribution = output_layer.output
         self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output, allow_input_downcast=True)
         return output_layer.output
@@ -185,6 +186,18 @@ class SummarizationNetwork(object):
         lr = T.scalar(name='lr')
         gradient_update, update = optimisers.sgd(lr, params, grads, docs, summaries, cost)
         return gradient_update, update
+
+    def normalize_embeddings_func(self, mode = "matrix"):
+        embeddings = self.embedding_matrices
+        updates = []
+        for matrix in embeddings:
+            if mode == "vector":
+                norm_matrix = matrix / matrix.sum(axis = 0).reshape((matrix.shape[0], 1))
+            elif mode == "matrix":
+                norm_matrix = matrix / T.max(matrix.sum(axis = 0))
+            updates.append( (matrix, norm_matrix) )
+
+        return theano.function([], embeddings, updates=updates)
 
     def initialize(self):
         grad_update, update = self.train_model_func(self.batch_size)

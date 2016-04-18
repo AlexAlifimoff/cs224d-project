@@ -72,6 +72,20 @@ class BagOfWordsEncoder(object):
     def func(self, x, y):
         return theano.function( [x, y], self.output, on_unused_input='ignore' )
 
+class AttentionEncoder(object):
+    def __init__(self, x, y, input_embedding_size, summary_embedding_size, num_input_words, vocab_sz, y_context_sz):
+        self.InputEmbeddingsLayer = EmbeddingsLayer(x, num_input_words, input_embedding_size, vocab_sz,
+                flatten = False, emb_name = 'F')
+
+        x_tilde = self.InputEmbeddingsLayer.output
+
+        self.SummaryEmbeddingsLayer = EmbeddingsLayer(y, y_context_sz, summary_embedding_size, vocab_sz, flatten = False,
+                emb_name = 'G')
+
+        y_tilde = self.SummaryEmbeddingsLayer.output
+
+        p = T.nnet.softmax( T.dot(x_tilde, T.dot(P, y_tilde)) )
+
 class OutputLayer(object):
     def __init__(self, encoder, h, vocab_sz, hidden_layer_sz, embedding_size):
         self.input = [encoder, h]

@@ -1,6 +1,5 @@
 import theano
 import theano.tensor as T
-from theano.tensor.shared_randomstreams import RandomStreams
 import numpy as np
 import optimisers
 from six.moves import cPickle as pickle
@@ -93,17 +92,20 @@ class AttentionEncoder(object):
         m = self.build_attention_convolution_matrix(Q, num_input_words)
 
         y_tilde = self.SummaryEmbeddingsLayer.output
-        p = T.nnet.softmax( T.dot(x_tilde, T.dot(P, y_tilde)) )
+        p = T.nnet.softmax( T.dot(x_tilde.T, T.dot(self.P, y_tilde)) )
 
-        return T.dot(T.dot(m, p), x_tilde)
+        m_dot_p = T.dot(m, p)
+        self.output = T.dot(x_tilde, m_dot_p)
+
+        self.params = [self.P] + self.InputEmbeddingsLayer.params + self.SummaryEmbeddingsLayer.params
 
     def build_attention_convolution_matrix(self, Q, l):
         # straight up borrowed from Jencir's initial model
         assert l >= Q
-        m = np.diagflat([1.] * 1)
+        m = np.diagflat([1.] * l)
         for i in range(1, Q):
-            m += np.diagflat([1.] * (1 - i), k=i)
-            m += np.diagflat([1.] * (1 - i), k=-i)
+            m += np.diagflat([1.] * (l - i), k=i)
+            m += np.diagflat([1.] * (l - i), k=-i)
         return m / np.sum(m, axis = 0)
 
 
@@ -135,7 +137,7 @@ class OutputLayer(object):
 
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
-            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.001,
+            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.005,
             encoder_type = 'attention'):
         assert(encoder_type in ['attention', 'bow'])
         self.encoder_type = encoder_type
@@ -169,7 +171,7 @@ class SummarizationNetwork(object):
                     self.input_sentence_length, self.vocab_size, self.context_size)
 
             self.embedding_matrices = [enc.InputEmbeddingsLayer.params[0],
-                    enc.SummaryEmbeddingLayer.params[0], el.params[0]]
+                    enc.SummaryEmbeddingsLayer.params[0], el.params[0]]
 
         output_layer = OutputLayer(enc, hl_1, self.vocab_size, self.hidden_layer_size,
                 self.embedding_size)
@@ -234,12 +236,12 @@ class SummarizationNetwork(object):
         gradient_update, update = optimisers.sgd(lr, params, grads, docs, summaries, cost)
         return gradient_update, update
 
-    def normalize_embeddings_func(self, mode = "matrix"):
+    def normalize_embeddings_func(self, mode = "vector"):
         embeddings = self.embedding_matrices
         updates = []
         for matrix in embeddings:
             if mode == "vector":
-                norm_matrix = matrix / matrix.sum(axis = 0).reshape((matrix.shape[0], 1))
+                norm_matrix = matrix / matrix.sum(axis = 0).reshape((1, matrix.shape[1]))
             elif mode == "matrix":
                 norm_matrix = matrix / T.max(matrix.sum(axis = 0))
             updates.append( (matrix, norm_matrix) )

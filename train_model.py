@@ -43,7 +43,7 @@ def train_model(data_folder, epochs, batch_size):
             #print(summaries.shape)
 
             cost = grad_shared(inputs, summaries)
-            update(0.001)
+            update(0.000001)
 
             print(epoch_id, batch_id, cost)
 
@@ -51,7 +51,8 @@ def train_model(data_folder, epochs, batch_size):
             summ = summaries[ex_idx, :].A1.astype('int32')
             print(inpt)
 
-            if epoch_id < 10: continue
+            if epoch_id < 0: continue
+
 
             rm = dp.vectorizer.generate_reverse_mapping()
 
@@ -71,7 +72,7 @@ def train_model(data_folder, epochs, batch_size):
                 for index in indices[0][-50:]:
                     #print(index)
                     print(dist[index], rm[index])
-        embedding_normalization_function()
+        #embedding_normalization_function()
  
 
 

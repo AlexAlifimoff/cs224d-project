@@ -95,6 +95,8 @@ class AttentionEncoder(object):
         y_tilde = self.SummaryEmbeddingsLayer.output
         p = T.nnet.softmax( T.dot(x_tilde, T.dot(P, y_tilde)) )
 
+        return T.dot(T.dot(m, p), x_tilde)
+
     def build_attention_convolution_matrix(self, Q, l):
         # straight up borrowed from Jencir's initial model
         assert l >= Q
@@ -133,7 +135,10 @@ class OutputLayer(object):
 
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
-            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.001):
+            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.001,
+            encoder_type = 'attention'):
+        assert(encoder_type in ['attention', 'bow'])
+        self.encoder_type = encoder_type
         self.input_sentence_length = input_sentence_length 
         self.vocab_size = vocab_size 
         self.embedding_size = embedding_size 
@@ -155,12 +160,21 @@ class SummarizationNetwork(object):
                 self.vocab_size, flatten = True, embedding_matrix = self.embedding_matrix)
         hl_1 = HiddenLayer(el, self.embedding_size * self.context_size,
                 self.hidden_layer_size)
-        enc_bow = BagOfWordsEncoder(x, y, self.embedding_size,
-                self.input_sentence_length, self.vocab_size, self.context_size, embedding_matrix = self.embedding_matrix)
-        output_layer = OutputLayer(enc_bow, hl_1, self.vocab_size, self.hidden_layer_size, self.embedding_size)
-        self.layers = [el, hl_1, enc_bow, output_layer]
+        if self.encoder_type == 'bow':
+            enc = BagOfWordsEncoder(x, y, self.embedding_size, self.input_sentence_length,
+                    self.vocab_size, self.context_size, embedding_matrix = self.embedding_matrix)
+            self.embedding_matrices = [enc.EmbeddingsLayer.params[0], el.params[0]]
+        elif self.encoder_type == 'attention':
+            enc = AttentionEncoder(x, y, self.embedding_size, self.embedding_size,
+                    self.input_sentence_length, self.vocab_size, self.context_size)
+
+            self.embedding_matrices = [enc.InputEmbeddingsLayer.params[0],
+                    enc.SummaryEmbeddingLayer.params[0], el.params[0]]
+
+        output_layer = OutputLayer(enc, hl_1, self.vocab_size, self.hidden_layer_size,
+                self.embedding_size)
+        self.layers = [el, hl_1, enc, output_layer]
         self.params = output_layer.params
-        self.embedding_matrices = [enc_bow.EmbeddingsLayer.params[0], el.params[0]]
         self._conditional_probability_distribution = output_layer.output
         self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output, allow_input_downcast=True)
         return output_layer.output         

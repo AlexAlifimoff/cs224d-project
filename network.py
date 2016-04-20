@@ -92,7 +92,9 @@ class AttentionEncoder(object):
         m = self.build_attention_convolution_matrix(Q, num_input_words)
 
         y_tilde = self.SummaryEmbeddingsLayer.output
-        p = T.nnet.softmax( T.dot(x_tilde.T, T.dot(self.P, y_tilde)) )
+        p =  T.dot(x_tilde.T, T.dot(self.P, y_tilde)).T  
+        p = T.nnet.softmax( p ).T
+
 
         m_dot_p = T.dot(m, p)
         self.output = T.dot(x_tilde, m_dot_p)
@@ -128,7 +130,9 @@ class OutputLayer(object):
         language_model_output = T.dot(self.V, h.output)
 
         self.output = encoder_output + language_model_output #T.dot(self.V, h.output) + T.dot(self.W, encoder.output)
-        self.output = T.exp(self.output)
+        #self.output = theano.printing.Print("output layer pre softmax")(self.output)
+        self.output = T.nnet.softmax(self.output.T).T
+        #self.output = theano.printing.Print("output layer post softmax")(self.output)
 
         self.params = encoder.params + h.params + [self.V, self.W]
 
@@ -137,7 +141,7 @@ class OutputLayer(object):
 
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
-            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.005,
+            context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.05,
             encoder_type = 'attention'):
         assert(encoder_type in ['attention', 'bow'])
         self.encoder_type = encoder_type
@@ -146,7 +150,6 @@ class SummarizationNetwork(object):
         self.embedding_size = embedding_size 
         self.context_size = context_size 
         self.hidden_layer_size = hidden_layer_size 
-        self.learning_rate = 0.001
 
         print("input sentence length", self.input_sentence_length)
         print("vocab size", self.vocab_size)
@@ -178,17 +181,15 @@ class SummarizationNetwork(object):
         self.layers = [el, hl_1, enc, output_layer]
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output
-        self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output, allow_input_downcast=True)
+        self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output)#, allow_input_downcast=True)
         return output_layer.output         
+
     def conditional_probability(self, x, y, y_position):
                 
         dist = self.conditional_probability_distribution(x,
                 y[y_position-self.context_size:y_position])
 
-
         self.f_conditional_probability_distribution = theano.function([x, y, y_position], dist)
-
-
         return dist[y[y_position]]
 
     def negative_log_likelihood(self, x, y):
@@ -228,15 +229,21 @@ class SummarizationNetwork(object):
         docs = T.imatrix('docs')
         summaries = T.imatrix('summaries')
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size) + self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
+        cost = theano.printing.Print("cost")(cost)
+        theano.pp(cost)
+        #self.params = [theano.printing.Print("...")(p) for p in self.params]
         params = {p.name: p for p in self.params} 
-        grads = T.grad(cost, list(params.values()))
+        #print(list(params.values()))
+        print(self.params)
+        grads = T.grad(cost, self.params)
+        #grads = theano.printing.Print("grads")(grads)
 
         # learning rate
         lr = T.scalar(name='lr')
-        gradient_update, update = optimisers.sgd(lr, params, grads, docs, summaries, cost)
+        gradient_update, update = optimisers.sgd(lr, self.params, grads, docs, summaries, cost)
         return gradient_update, update
 
-    def normalize_embeddings_func(self, mode = "vector"):
+    def normalize_embeddings_func(self, mode = "matrix"):
         embeddings = self.embedding_matrices
         updates = []
         for matrix in embeddings:

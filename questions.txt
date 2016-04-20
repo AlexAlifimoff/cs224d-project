@@ -4,3 +4,5 @@ and summaries with different lengths. When we pad the matrices
 that represent the documents, what should the padding vector look like?
 Does it have its own token, or should it simply be a column of zeros?
 
+Check softmax in encoder... softmax in model was broken
+

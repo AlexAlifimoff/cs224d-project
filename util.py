@@ -93,16 +93,17 @@ class DataProcessor(object):
                             if os.path.isfile(os.path.join(folder_path, f))]
         print("Loading files...")
         print(files_in_folder)
+        print(len(files_in_folder))
 
         for f in files_in_folder:
             self.load_single_json(os.path.join(folder_path, f))
 
     def load_single_json(self, file_path):
         with open(file_path) as json_file:
-            print(file_path)
+            #print(file_path)
             try:
                 data = json.load(json_file) 
-                print(data)
+                #print(data)
                 summary = data["summary"]
                 summary = ''.join([self.pad_token + " "] * self.pad_length) + summary
                 full_text = data["full_text"]

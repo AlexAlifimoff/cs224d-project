@@ -182,6 +182,7 @@ class SummarizationNetwork(object):
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output
         self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output)#, allow_input_downcast=True)
+        self.f_cond_prob = self.f_conditional_probability_distribution
         return output_layer.output         
 
     def conditional_probability(self, x, y, y_position):
@@ -215,12 +216,6 @@ class SummarizationNetwork(object):
         document_range = T.arange(0, batch_size)
         func = lambda i, documents, summaries: T.sum(self.negative_log_likelihood(documents[i, :],
             summaries[i, :]), axis=1)
-        func2 = lambda document, summary: T.sum(self.negative_log_likelihood(document,
-                                                                    summary), axis=1)
- 
-
-        #probs, _ = theano.scan(func2, sequences=[documents.T, summaries.T],
-        #                          non_sequences=[])
 
         probs, _ = theano.scan(func, sequences=[document_range], non_sequences=[documents,summaries])
         return probs.sum() 

@@ -74,22 +74,24 @@ def train_model(data_folder, epochs, batch_size):
 
 
 
-            for idx in range(3, 10):
+            for idx in range(3,25):
 
                 inpt_words = []
-                for i, tk in enumerate(inpt):
-                    inpt_words.append( rm[tk] )
-                    if i >= idx: break
 
-                print(idx, inpt_words)
+                summ_words = [rm[tk] for tk in summ]
+                summ_so_far = summ_words[:idx]
+
+                print(idx, summ_so_far)
 
                 dist = cpd(inpt, summ, idx)
-
 
                 indices = np.argsort(dist.T)[:10]
                 print(indices)
                 for index in indices[0][-10:]:
                     print(dist[index],rm[index])
+                correct_word_token = summ_words[idx]
+                correct_word_idx = dp.vectorizer.mapping[correct_word_token]
+                print("correct word score:", dist[correct_word_idx], correct_word_token)
 
         #embedding_normalization_function()
  

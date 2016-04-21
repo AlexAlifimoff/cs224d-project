@@ -64,7 +64,7 @@ def train_model(data_folder, epochs, batch_size, save_params_every = 10, validat
             if batch_id % validate_every == 0:
                 validate(s, v_inputs, v_summaries)
 
-            if epoch_id < 5: continue
+            if epoch_id < 1 or batch_id % validate_every != 0: continue
 
             rm = dp.vectorizer.generate_reverse_mapping()
 

@@ -27,7 +27,7 @@ def train_model(data_folder, epochs, batch_size):
     s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
             context_size = 3, input_sentence_length = input_sentence_length,
             embedding_size = embedding_size, embedding_matrix = emb_matrix)
-    grad_shared, update = s.initialize()
+    #grad_shared, update = s.initialize()
 
     params = s.params
     cpd = s.f_conditional_probability_distribution
@@ -40,25 +40,17 @@ def train_model(data_folder, epochs, batch_size):
     for epoch_id in range(epochs):
         for batch_id in range(num_batches):
             summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size)
-            #print("inputs")
-            #print(inputs)
-            #print(type(inputs))
-            #print(inputs.shape)
-            #print("summaries")
-            #print(summaries)
-            #print(type(summaries))
-            #print(summaries.shape)
 
-            cost = grad_shared(inputs, summaries)
-            update(0.1)
+            s.train_one_batch(inputs, summaries, 0.1, True)
 
-            print(epoch_id, batch_id, cost)
+            #cost = grad_shared(inputs, summaries)
+            #update(0.1)
 
             inpt = inputs[ex_idx, :].A1.astype('int32')
             summ = summaries[ex_idx, :].A1.astype('int32')
             print(inpt)
 
-            if epoch_id < 0: continue
+            if epoch_id < 5: continue
 
             E = [e for e in params if e.name == 'V'][0]
             print("Embedding matrix...")

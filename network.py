@@ -151,14 +151,13 @@ class SummarizationNetwork(object):
         self.context_size = context_size 
         self.hidden_layer_size = hidden_layer_size 
 
-        print("input sentence length", self.input_sentence_length)
-        print("vocab size", self.vocab_size)
-
         self.embedding_matrix = embedding_matrix
         self.l2_coefficient = l2_coefficient
 
         self.summary_length = 8 
         self.batch_size = 3 
+
+        self.initialize()
 
     def conditional_probability_distribution(self, x, y):
         el = EmbeddingsLayer(y, self.context_size, self.embedding_size,
@@ -181,8 +180,7 @@ class SummarizationNetwork(object):
         self.layers = [el, hl_1, enc, output_layer]
         self.params = output_layer.params
         self._conditional_probability_distribution = output_layer.output
-        self.f_conditional_probability_distribution = theano.function([x, y], output_layer.output)#, allow_input_downcast=True)
-        self.f_cond_prob = self.f_conditional_probability_distribution
+        self.get_conditional_probability_distribution = theano.function([x, y], output_layer.output)#, allow_input_downcast=True)
         return output_layer.output         
 
     def conditional_probability(self, x, y, y_position):
@@ -191,6 +189,7 @@ class SummarizationNetwork(object):
                 y[y_position-self.context_size:y_position])
 
         self.f_conditional_probability_distribution = theano.function([x, y, y_position], dist)
+        self.get_conditional_probability_distribution_for_token = self.f_conditional_probability_distribution
         return dist[y[y_position]]
 
     def negative_log_likelihood(self, x, y):
@@ -224,8 +223,8 @@ class SummarizationNetwork(object):
         docs = T.imatrix('docs')
         summaries = T.imatrix('summaries')
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size) + self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
-        cost = theano.printing.Print("cost")(cost)
-        theano.pp(cost)
+        #cost = theano.printing.Print("cost")(cost)
+        #theano.pp(cost)
         #self.params = [theano.printing.Print("...")(p) for p in self.params]
         params = {p.name: p for p in self.params} 
         #print(list(params.values()))
@@ -235,8 +234,9 @@ class SummarizationNetwork(object):
 
         # learning rate
         lr = T.scalar(name='lr')
-        gradient_update, update = optimisers.sgd(lr, self.params, grads, docs, summaries, cost)
-        return gradient_update, update
+        gradient_update, network_update = optimisers.sgd(lr, self.params,
+                                                                grads, docs, summaries, cost)  
+        return gradient_update, network_update
 
     def normalize_embeddings_func(self, mode = "matrix"):
         embeddings = self.embedding_matrices
@@ -251,26 +251,21 @@ class SummarizationNetwork(object):
         return theano.function([], embeddings, updates=updates)
 
     def initialize(self):
-        grad_update, update = self.train_model_func(self.batch_size)
-        self.gradient_update = grad_update
-        self.cost_update = update
-        return grad_update, update
+        self.gradient_update, self.network_update = self.train_model_func(self.batch_size)
+
+    def train_one_batch(self, documents, summaries, learning_rate, verbose = False):
+        cost = self.gradient_update(documents, summaries)
+        self.network_update(learning_rate)
+
+        if verbose:
+            print("Cost after update: ", cost)
 
     def save(self, name):
         f = open(name, 'wb')
         pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
         f.close()
 
-    def train_one_epoch(self, documents, summaries):
-        num_data_points = documents.shape[0]
-        assert(num_data_points == summaries.shape[0])
-        num_batches = num_data_points / self.batch_size
-        for i in range(num_batches):
-            end = (i+1) * self.batch_size
-            if end > num_data_points: end = num_data_points
-            cur_documents = documents[i*self.batch_size:end, :, :]
-
-    def load(self, name):
+        def load(self, name):
         if os.path.isfile(name):
             f = open(name, 'rb')
             s = pickle.load(f)

@@ -4,7 +4,13 @@ import numpy as np
 
 #np.set_printoptions(threshold='nan')
 
-def train_model(data_folder, epochs, batch_size):
+def validate(net, input_batch, summary_batch):
+    cost = net.get_batch_cost_unregularized(input_batch, summary_batch)
+    print("Validation cost:", cost)
+    return cost
+
+
+def train_model(data_folder, epochs, batch_size, save_params_every = 10, validate_every=10):
     print("Loading data...")
     dp = util.DataProcessor()
     dp.load_json_from_folder(data_folder)
@@ -36,38 +42,32 @@ def train_model(data_folder, epochs, batch_size):
 
     ex_idx = 1 
 
+    # validation inputs and summaries...
+    v_inputs, v_summaries = dp.get_tensors_for_batch(num_batches-1, batch_size)
+    v_inputs, v_summaries = v_inputs.astype('int32'), v_summaries.astype('int32')
 
     for epoch_id in range(epochs):
-        for batch_id in range(num_batches):
+
+        # for the moment... save last batch for validation
+        for batch_id in range(num_batches-1):
             summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size)
 
             s.train_one_batch(inputs, summaries, 0.1, True)
 
-            #cost = grad_shared(inputs, summaries)
-            #update(0.1)
-
             inpt = inputs[ex_idx, :].A1.astype('int32')
             summ = summaries[ex_idx, :].A1.astype('int32')
-            print(inpt)
+
+            if batch_id % save_params_every == 0:
+                s.save("yohgnet_{}_{}.network".format(epoch_id, batch_id))
+
+            if batch_id % validate_every == 0:
+                validate(s, v_inputs, v_summaries)
 
             if epoch_id < 5: continue
 
-            E = [e for e in params if e.name == 'V'][0]
-            print("Embedding matrix...")
-            print(E.get_value())
-            #emb_matrix = E.get_value()
-
-
             rm = dp.vectorizer.generate_reverse_mapping()
-            #print("endtok vector")
-            #print(emb_matrix[:, dp.vectorizer.mapping["endtok"]])
-
-            
-
-
 
             for idx in range(3,25):
-
                 inpt_words = []
 
                 summ_words = [rm[tk] for tk in summ]

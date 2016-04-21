@@ -222,7 +222,11 @@ class SummarizationNetwork(object):
     def train_model_func(self, batch_size):
         docs = T.imatrix('docs')
         summaries = T.imatrix('summaries')
-        cost = self.negative_log_likelihood_batch(docs, summaries, batch_size) + self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
+        cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
+        regularization_cost = self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
+        self.get_batch_cost_unregularized = theano.function([docs, summaries], cost)
+
+        cost = cost + regularization_cost
         #cost = theano.printing.Print("cost")(cost)
         #theano.pp(cost)
         #self.params = [theano.printing.Print("...")(p) for p in self.params]
@@ -260,12 +264,14 @@ class SummarizationNetwork(object):
         if verbose:
             print("Cost after update: ", cost)
 
+        return cost
+
     def save(self, name):
         f = open(name, 'wb')
         pickle.dump(self, f, protocol=pickle.HIGHEST_PROTOCOL)
         f.close()
 
-        def load(self, name):
+    def load(self, name):
         if os.path.isfile(name):
             f = open(name, 'rb')
             s = pickle.load(f)

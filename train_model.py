@@ -43,8 +43,9 @@ def train_model(data_folder, epochs, batch_size, save_params_every = 10, validat
     ex_idx = 1 
 
     # validation inputs and summaries...
-    v_inputs, v_summaries = dp.get_tensors_for_batch(num_batches-1, batch_size)
-    v_inputs, v_summaries = v_inputs.astype('int32'), v_summaries.astype('int32')
+    v_summaries, v_inputs = dp.get_tensors_for_batch(num_batches-1, batch_size=batch_size)
+
+    v_summaries, v_inputs = v_summaries.astype('int32'), v_inputs.astype('int32')
 
     for epoch_id in range(epochs):
 

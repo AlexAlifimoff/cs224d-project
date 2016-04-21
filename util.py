@@ -66,17 +66,6 @@ def load_embeddings_from_glove(dimension, vectorizer):
 
     return emb_matrix
 
-
-    
-
-    indices_to_replace = []
-    with open("glove.6B/glove.6B.{}d.txt".format(dimension), 'r') as embfile:
-        for line in embfile:
-            line = line.split(" ")
-            vec = list(map(float, line[1:]))
-            print(line[0])
-            assert(len(vec) == dimension)
-
 class DataProcessor(object):
     def __init__(self):
         vparams = {"preserve_case": False}
@@ -87,20 +76,23 @@ class DataProcessor(object):
         self.pad_length = 3
         self.summaries = []
         self.inputs = []
+        self.num_files_loaded = 0
 
     def load_json_from_folder(self, folder_path):
         files_in_folder = [f for f in os.listdir(folder_path)
                             if os.path.isfile(os.path.join(folder_path, f))]
         print("Loading files...")
-        print(files_in_folder)
-        print(len(files_in_folder))
+        print("Num loaded:", len(files_in_folder))
 
         for f in files_in_folder:
-            self.load_single_json(os.path.join(folder_path, f))
+            try:
+                self.load_single_json(os.path.join(folder_path, f))
+                self.num_files_loaded += 1
+            except json.decoder.JSONDecodeError as err:
+                pass
 
     def load_single_json(self, file_path):
         with open(file_path) as json_file:
-            #print(file_path)
             try:
                 data = json.load(json_file) 
                 #print(data)
@@ -114,6 +106,7 @@ class DataProcessor(object):
                 self.inputs.append(vectorized_ft)
             except json.decoder.JSONDecodeError as err:
                 print("decode error.")
+                raise err
 
     def get_batch_size(self, num_batches):
         return int( len(self.summaries) / num_batches)
@@ -128,9 +121,6 @@ class DataProcessor(object):
         self.summary_max_length = summary_dims
         self.input_max_length = input_dims
 
-        print("summary dims", summary_dims)
-        print("input dims", input_dims)
-
         self.input_sentence_length = input_dims
 
     def get_tensors_for_batch(self, batch_id, num_batches=None, batch_size=None, pad_length = None):
@@ -143,6 +133,7 @@ class DataProcessor(object):
             raise Exception("Only one of batch_size or num_batches must be non-None")
         if num_batches is not None: batch_size = int(num_examples / num_batches)
         elif batch_size is not None: num_batches = int(num_examples / batch_size)
+
         vec_to_sm = self.vectorizer.index_vector_to_sparse_matrix
         #endtok = self.vectorizer.vocab_size()
         #self.vectorizer.vectorize("endtok")

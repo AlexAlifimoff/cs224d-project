@@ -5,6 +5,9 @@ import optimisers
 from six.moves import cPickle as pickle
 import os
 
+import sys
+sys.setrecursionlimit(5000)
+
 class EmbeddingsLayer(object):
     #
     # input_matrix is v-by-c array, with v being size of vocab and c size of context
@@ -24,10 +27,6 @@ class EmbeddingsLayer(object):
         self.params = [self.E]
 
         self._output_function = self.E[:,input_vec]
-        print("flatten:", flatten)
-        print("embedding_size", embedding_size)
-        print("vocab_size", vocabulary_size)
-        print("context_size", context_size)
         if flatten:
             self.output = T.reshape(self._output_function, (embedding_size * context_size, 1))
         else:
@@ -222,17 +221,20 @@ class SummarizationNetwork(object):
     def train_model_func(self, batch_size):
         docs = T.imatrix('docs')
         summaries = T.imatrix('summaries')
+
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         regularization_cost = self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
+
         self.get_batch_cost_unregularized = theano.function([docs, summaries], cost)
 
         cost = cost + regularization_cost
+
         #cost = theano.printing.Print("cost")(cost)
         #theano.pp(cost)
         #self.params = [theano.printing.Print("...")(p) for p in self.params]
         params = {p.name: p for p in self.params} 
         #print(list(params.values()))
-        print(self.params)
+        #print(self.params)
         grads = T.grad(cost, self.params)
         #grads = theano.printing.Print("grads")(grads)
 

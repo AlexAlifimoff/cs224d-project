@@ -10,16 +10,18 @@ def validate(net, input_batch, summary_batch):
     return cost
 
 
-def train_model(data_folder, epochs, batch_size, save_params_every = 10, validate_every=10):
+def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
     print("Loading data...")
-    dp = util.DataProcessor()
-    dp.load_json_from_folder(data_folder)
+    dp = util.GWDataProcessor(load_from_file=True)
+    dp.load_tensors()
+    #dp.load_json_from_folder(data_folder)
+
+    dp.calculate_network_parameters()
 
     num_batches = dp.get_num_batches(batch_size)
 
     print("Calculating network parameters...")
 
-    dp.calculate_network_parameters()
 
     embedding_size = 50
 
@@ -55,8 +57,8 @@ def train_model(data_folder, epochs, batch_size, save_params_every = 10, validat
 
             s.train_one_batch(inputs, summaries, 0.1, True)
 
-            inpt = inputs[ex_idx, :].A1.astype('int32')
-            summ = summaries[ex_idx, :].A1.astype('int32')
+            inpt = inputs[ex_idx, :].astype('int32')
+            summ = summaries[ex_idx, :].astype('int32') # was doing .A1 before...
 
             if batch_id % save_params_every == 0:
                 s.save("yohgnet_{}_{}.network".format(epoch_id, batch_id))
@@ -91,7 +93,6 @@ def train_model(data_folder, epochs, batch_size, save_params_every = 10, validat
 
 
 if __name__ == "__main__":
-    data_folder = "./data/nyt/data/nyt_eng/" #"../cs224n-project/data/wikipedia_small"
     epochs = 15
     batch_size = 128
     train_model(data_folder, epochs, batch_size)

@@ -1,6 +1,7 @@
-from nltk.tokenize import StanfordTokenizer, TweetTokenizer
+from nltk.tokenize import TweetTokenizer
 import scipy.sparse as sp
 import numpy as np
+import json
 
 class TextVectorizer(object):
     def __init__(self, params, mapping = None):
@@ -45,6 +46,25 @@ class TextVectorizer(object):
         cols = len(index_vector)
         m = sp.csc_matrix((data, indices, indptr), shape=(rows, cols))
         return m
+
+    def save_mapping(self):
+        with open("mapping.json", 'w') as mf:
+            json.dump(self.mapping, mf)
+        with open("vec_metadata.json", 'w') as mf:
+            vmd = {
+                'last_unassigned_index': self.last_unassigned_index,
+                #'params': self.params
+                }
+            json.dump(vmd, mf)
+
+    def load_mapping(self):
+        with open("mapping.json", 'r') as mf:
+            self.mapping = json.load(mf)
+        with open('vec_metadata.json', 'r') as mf:
+            vmd = json.load(mf)
+            self.last_unassigned_index = vmd['last_unassigned_index']
+            #self.params = vmd['params']
+
 if __name__ == "__main__":
     params = {"preserve_case": False}
     tv = TextVectorizer(params)

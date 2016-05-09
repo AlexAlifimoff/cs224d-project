@@ -3,6 +3,8 @@ import os
 import json
 import numpy as np
 import network
+import gzip
+import xml.etree.ElementTree as ET
 
 def max_dimensions(matrices):
     if isinstance(matrices[0], list):
@@ -34,15 +36,21 @@ def load_embeddings_from_glove(dimension, vectorizer):
     assert(dimension in valid_dimensions)
 
     glove_embeddings = {}
-    with open("glove.6B/glove.6B.{}d.txt".format(dimension), 'r') as embfile:
-        for line in embfile:
-            line = line.split(" ")
-            vec = list(map(float, line[1:]))
-            glove_embeddings[line[0]] = vec
-            assert(len(vec) == dimension)
-
+    with open("glove.6B/glove.6B.{}d.txt".format(dimension), 'rb') as embfile:
+        for i, line in enumerate(embfile, 1):
+            try:
+                line = line.decode('utf-8')
+                line = line.split(" ")
+                vec = list(map(float, line[1:]))
+                glove_embeddings[line[0]] = vec
+                #print(line[0], vec)
+                assert(len(vec) == dimension)
+            except UnicodeEncodeError as e:
+                print("Decode error at {}".format(i))
+        print("Total vectors loaded:{}".format(i))
 
     vocab_size = vectorizer.vocab_size()
+    print("vocab size: {}".format(vocab_size))
     mapping = vectorizer.mapping
 
     # embedding size by vocab size
@@ -55,7 +63,7 @@ def load_embeddings_from_glove(dimension, vectorizer):
         except KeyError as e:
             indices_to_replace.append(index)
 
-        emb_matrix[:, index] = np.array(vec)
+    emb_matrix[:, index] = np.array(vec)
 
     avg_vector = np.mean(emb_matrix, axis = 1)
 
@@ -65,6 +73,177 @@ def load_embeddings_from_glove(dimension, vectorizer):
     print("Number of indices replaced with average:", len(indices_to_replace))
 
     return emb_matrix
+
+class GWDataProcessor(object):
+    def __init__(self, load_from_file = False):
+        vparams = {"preserve_case": False}
+        self.vectorizer = vectorizer.TextVectorizer(vparams) 
+        self.pad_token = "PAD"
+        self.end_token = "endtok"
+        self.end_token_value = self.vectorizer.vectorize(self.end_token)[0]
+        self.pad_length = 3
+        self.summaries = []
+        self.inputs = []
+        self.num_files_loaded = 0
+
+        self.last_file_idx = 0
+
+        self.num_to_store_per_file = 100000
+
+        self.gw_folder_path = "/afs/ir/data/linguistic-data/ldc/LDC2007T07_English-Gigaword-Third-Edition/data"
+        self.valid_corpora = ["nyt_eng"]
+
+        self.input_max_length = 0
+        self.summary_max_length= 0
+
+        self.num_pairs = 0
+
+        self.data_loaded = False
+
+        self.load_file_list()
+        if load_from_file:
+            self.load_metadata()
+
+    def calculate_network_parameters(self):
+        self.input_sentence_length = self.input_max_length 
+
+    def load_file_list(self):
+        self.data_files = []
+        for corpora in self.valid_corpora:
+            folder_path = os.path.join(self.gw_folder_path, corpora)
+            files_in_folder = [os.path.join(self.gw_folder_path, corpora, f) for f in os.listdir(folder_path)]
+            self.data_files.extend(files_in_folder)
+
+    def save_metadata(self):
+        metadata = {
+                    'input_length': self.input_max_length,
+                    'summary_length': self.summary_max_length,
+                    'num_pairs': self.num_pairs
+                   }
+        with open('./data/metadata.json', 'w') as jf:
+            json.dump(metadata, jf)
+        self.vectorizer.save_mapping()
+
+    def load_metadata(self):
+        with open('./data/metadata.json', 'r') as jf:
+            md = json.load(jf)
+            self.input_max_length = md['input_length']
+            self.summary_max_length = md['summary_length']
+            self.num_pairs = md['num_pairs']
+        self.vectorizer.load_mapping()
+
+    def convert_to_tensors(self):
+        pairs = []
+        for filename in self.data_files:
+            pairs.extend(self.convert_single_file_to_tensor(filename))
+            if len(pairs) > self.num_to_store_per_file:
+                to_store = pairs[:self.num_to_store_per_file]
+                pairs = pairs[self.num_to_store_per_file:]
+                self.dump_to_json(to_store)
+        self.dump_to_json(pairs)
+
+    def dump_to_json(self, pairs):
+        with open('./data/{}.json'.format(self.last_file_idx), 'w') as jf:
+            print("saving file {}".format(self.last_file_idx))
+            json.dump(pairs, jf)
+            self.last_file_idx += 1
+        self.save_metadata()
+
+    def convert_single_file_to_tensor(self, file_path):
+        pairs = []
+        with gzip.open(file_path, 'rb') as f:
+            content = f.read()
+            content = "<file>\n{}\n</file>".format(content)
+            content = content.replace("&", "&amp;")
+            root = ET.fromstring(content)
+            for doc in root.findall("DOC"): 
+                headline = doc.find("HEADLINE")
+                if headline is None: continue
+                headline = remove_escaped(headline.text)
+                text = doc.find("TEXT")
+                paragraphs = text.findall("P")
+                first_three_paras = [p.text for p in paragraphs[:2]]
+                first_three_paras = ' '.join(first_three_paras)
+                first_three_paras = remove_escaped(first_three_paras)
+                v_input = self.vectorizer.vectorize(first_three_paras)
+                v_summary = self.vectorizer.vectorize(headline)
+                self.input_max_length = max(self.input_max_length, len(v_input))
+                self.summary_max_length = max(self.summary_max_length, len(v_summary))
+                self.num_pairs += 1
+                pair = DataPair(headline, first_three_paras, v_summary, v_input)
+                pairs.append(pair)
+        return [p.__dict__ for p in pairs]
+
+    def get_batch_size(self, num_batches):
+        return int( self.num_pairs / num_batches)
+
+    def get_num_batches(self, batch_size):
+        return int( self.num_pairs / batch_size)
+
+    def load_tensors(self, text_cutoff_length=100):
+        self.summaries = []
+        self.indices = []
+        file_idx = 0
+        while True:
+            try: 
+                print("trying to load file... {}".format(file_idx))
+                with open("data/{}.json".format(file_idx), 'r') as f:
+                    data = json.load(f) 
+                    print(len(data))
+                    hlv = [d['headline_vec'] for d in data]
+                    if text_cutoff_length is None:
+                        tv = [d['text_vec'] for d in data]
+                    else:
+                        tv = [d['text_vec'][:text_cutoff_length] for d in data]
+                    self.summaries.extend(hlv)
+                    self.inputs.extend(tv)
+                    print("current size: ", len(self.summaries))
+            except FileNotFoundError as e:
+                break
+            file_idx += 1
+
+        if text_cutoff_length is not None:
+            self.input_max_length = text_cutoff_length
+
+        print("Summary max len: {}".format(self.summary_max_length))
+        print("Text max len: {}".format(self.input_max_length))
+
+        #self.summaries = np.array(self.summaries)
+        #self.inputs = np.array(self.inputs)
+
+    def get_tensors_for_batch(self, batch_id, num_batches=None, batch_size=None, pad_length = None):
+        num_examples = self.num_pairs 
+        if ((batch_size is None and num_batches is None) or  
+                (batch_size is not None and num_batches is not None)):
+            raise Exception("Only one of batch_size or num_batches must be non-None")
+        if num_batches is not None: batch_size = int(num_examples / num_batches)
+        elif batch_size is not None: num_batches = int(num_examples / batch_size)
+
+        start, end = batch_id * batch_size, (batch_id + 1) * batch_size
+        summs = pad_list_of_indices(self.summaries[start:end], self.end_token_value, self.summary_max_length)
+        texts = pad_list_of_indices(self.inputs[start:end], self.end_token_value, self.input_max_length)
+
+        return np.array(summs), np.array(texts)
+    
+        
+
+class DataPair(object):
+    def __init__(self, headline, text, hl_vec, text_vec):
+        self.headline = headline
+        self.text = text
+        self.headline_vec = hl_vec
+        self.text_vec = text_vec
+
+def remove_escaped(s):
+    rep = {
+        "\\n": " ",
+        "\\'": "'",
+        '\\"': '"'
+        }
+    for k, v in rep.items():
+        s = s.replace(k, v)
+    return s.strip()
+                
 
 class DataProcessor(object):
     def __init__(self):
@@ -90,7 +269,7 @@ class DataProcessor(object):
                 self.num_files_loaded += 1
             except json.decoder.JSONDecodeError as err:
                 pass
-
+    
     def load_single_json(self, file_path):
         with open(file_path) as json_file:
             try:
@@ -150,7 +329,12 @@ class DataProcessor(object):
         #    print(len(t))
         return np.matrix(summs), np.matrix(texts)
 
+
 if __name__ == "__main__":
+    dp = GWDataProcessor()
+    dp.convert_to_tensors()
+    dp.save_metadata()
+    exit()
 
 
     dp = DataProcessor()

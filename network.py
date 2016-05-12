@@ -254,9 +254,9 @@ class SummarizationNetwork(object):
 
         # learning rate
         lr = T.scalar(name='lr')
-        gradient_update, network_update = optimisers.sgd_(lr, self.params, grads, docs, summaries,
+        gradient_update = optimisers.sgd_(lr, self.params, grads, docs, summaries,
                                                                 cost, self.dsb, self.ssb, batch_size)
-        return gradient_update, network_update
+        return gradient_update
 
     def normalize_embeddings_func(self, mode = "matrix"):
         embeddings = self.embedding_matrices
@@ -271,7 +271,7 @@ class SummarizationNetwork(object):
         return theano.function([], embeddings, updates=updates)
 
     def initialize(self):
-        self.gradient_update, self.network_update = self.train_model_func(self.batch_size, self.num_batches, self.summary_length, self.input_sentence_length)
+        self.gradient_update = self.train_model_func(self.batch_size, self.num_batches, self.summary_length, self.input_sentence_length)
 
     def train_one_superbatch(self, dsb, ssb, learning_rate, num_batches):
         #shared_docs, shared_summs = shared_dataset(documents, summaries)
@@ -280,8 +280,10 @@ class SummarizationNetwork(object):
         print("setting shared variables...")
         cost = 0
         for i in range(num_batches):
-            cost += self.gradient_update(i)
-            self.network_update(learning_rate, i)
+            c = self.gradient_update(learning_rate, i)
+            print(c)
+            cost += c
+            #self.network_update(learning_rate, i)
 
         print("Cost after update: ", cost)
 

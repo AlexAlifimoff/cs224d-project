@@ -139,20 +139,23 @@ def sgd(lr,tparams, grads, x, y, cost):
     return f_grad_shared, f_update
 
 def sgd_(lr, tparams, grads, x, y, cost, x_shared, y_shared, batch_size):
-    print(y, type(y))
-    print(x, type(x))
-    print(y_shared, type(y_shared))
-    print(x_shared, type(x_shared))
-    gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % p.name, borrow = True)
-               for p in tparams]
+    #print(y, type(y))
+    #print(x, type(x))
+    #print(y_shared, type(y_shared))
+    #print(x_shared, type(x_shared))
+    #gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % p.name, borrow = True)
+    #           for p in tparams]
     #names = [p.name for p in tparams]
-    gsup = [(gs, g) for gs, g in zip(gshared, grads)]
+    #gsup = [(gs, g) for gs, g in zip(gshared, grads)]
 
     index = tensor.iscalar(name='batch_idx')
     print("batch_size", batch_size)
+    for p, g in zip(tparams, grads):
+        print(p, g)
 
-    f_grad_shared = theano.function([index], outputs=cost, 
-                                    updates = gsup,
+    pup = [(p, p - lr * g) for p, g in zip(tparams, grads)]
+    f_grad_shared = theano.function([lr, index], outputs=cost, 
+                                    updates = pup,
                                     givens = [ 
                                         (y, tensor.cast(y_shared[index * batch_size: (index + 1) * batch_size], 'int32')),
                                         (x, tensor.cast(x_shared[index * batch_size: (index + 1) * batch_size], 'int32'))
@@ -160,13 +163,13 @@ def sgd_(lr, tparams, grads, x, y, cost, x_shared, y_shared, batch_size):
                                     profile=profile,
                                     allow_input_downcast=True)
 
-    pup = [(p, p - lr * g) for p, g in zip(tparams, grads)]
-    f_update = theano.function([lr, index], [], givens = [ 
-                                        (y, tensor.cast(y_shared[index * batch_size: (index + 1) * batch_size], 'int32')),
-                                        (x, tensor.cast(x_shared[index * batch_size: (index + 1) * batch_size], 'int32'))
-                                    ],updates=pup, profile=profile,
-                               allow_input_downcast=True)
+    #pup = [(p, p - lr * g) for p, g in zip(tparams, grads)]
+    #f_update = theano.function([lr, index], [], givens = [ 
+    #                                    (y, tensor.cast(y_shared[index * batch_size: (index + 1) * batch_size], 'int32')),
+    #                                    (x, tensor.cast(x_shared[index * batch_size: (index + 1) * batch_size], 'int32'))
+    #                                ],updates=pup, profile=profile,
+    #                           allow_input_downcast=True)
     
 
-    return f_grad_shared, f_update
+    return f_grad_shared
 

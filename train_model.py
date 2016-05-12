@@ -21,8 +21,6 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
     num_batches = dp.get_num_batches(batch_size*batches_per_update)
 
     print("Calculating network parameters...")
-
-
     embedding_size = 50
 
     emb_matrix = util.load_embeddings_from_glove(embedding_size, dp.vectorizer) #np.random.rand( embedding_size, dp.vectorizer.vocab_size() )#

@@ -225,7 +225,7 @@ class SummarizationNetwork(object):
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         regularization_cost = self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
 
-        self.get_batch_cost_unregularized = theano.function([docs, summaries], cost, allow_input_downcast=True)
+        self.get_batch_cost_unregularized = theano.function([docs, summaries], cost, allow_input_downcast=True, borrow=True)
         theano.printing.debugprint(cost)
         cost = cost + regularization_cost
 

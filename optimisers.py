@@ -122,7 +122,7 @@ def rmsprop(lr, tparams, grads, inp, cost):
 
 
 def sgd(lr,tparams, grads, x, y, cost):
-    gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % p.name)
+    gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % p.name, borrow = True)
                for p in tparams]
     names = [p.name for p in tparams]
     gsup = [(gs, g) for gs, g, name in zip(gshared, grads, names)]
@@ -133,6 +133,7 @@ def sgd(lr,tparams, grads, x, y, cost):
 
     pup = [(p, p - lr * g) for p, g in zip(tparams, gshared)]
     f_update = theano.function([lr], [], updates=pup, profile=profile,
-                               allow_input_downcast=True)
+                               allow_input_downcast=True, borrow = True)
+    
 
     return f_grad_shared, f_update

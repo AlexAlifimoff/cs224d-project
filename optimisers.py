@@ -137,3 +137,21 @@ def sgd(lr,tparams, grads, x, y, cost):
     
 
     return f_grad_shared, f_update
+
+def sgd_(lr, tparams, grads, x, y, cost):
+    #gshared = [theano.shared(p.get_value() * 0., name='%s_grad' % p.name, borrow = True)
+    #           for p in tparams]
+    #names = [p.name for p in tparams]
+    #gsup = [(gs, g) for gs, g in zip(gshared, grads)]
+
+    f_grad_shared = theano.function([x, y], cost, 
+                                    profile=profile,
+                                    allow_input_downcast=True)
+
+    pup = [(p, p - lr * g) for p, g in zip(tparams, grads)]
+    f_update = theano.function([lr], [], updates=pup, profile=profile,
+                               allow_input_downcast=True)
+    
+
+    return f_grad_shared, f_update
+

@@ -8,6 +8,11 @@ import os
 import sys
 sys.setrecursionlimit(5000)
 
+def shared_dataset(x, y):
+    shared_x = theano.shared(numpy.asarray(x, dtype = theano.config.floatX), borrow = True)
+    shared_y = theano.shared(numpy.asarray(y, dtype = theano.config.floatX), borrow = True)
+    return T.cast(shared_x, 'int32'), T.cast(shared_y, 'int32')
+
 class EmbeddingsLayer(object):
     #
     # input_matrix is v-by-c array, with v being size of vocab and c size of context
@@ -240,7 +245,7 @@ class SummarizationNetwork(object):
 
         # learning rate
         lr = T.scalar(name='lr')
-        gradient_update, network_update = optimisers.sgd(lr, self.params,
+        gradient_update, network_update = optimisers.sgd_(lr, self.params,
                                                                 grads, docs, summaries, cost)  
         return gradient_update, network_update
 

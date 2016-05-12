@@ -80,6 +80,7 @@ class GWDataProcessor(object):
         self.vectorizer = vectorizer.TextVectorizer(vparams) 
         self.pad_token = "PAD"
         self.end_token = "endtok"
+        
         self.end_token_value = self.vectorizer.vectorize(self.end_token)[0]
         self.pad_length = 3
         self.summaries = []
@@ -90,7 +91,7 @@ class GWDataProcessor(object):
 
         self.num_to_store_per_file = 100000
 
-        self.gw_folder_path = "/afs/ir/data/linguistic-data/ldc/LDC2007T07_English-Gigaword-Third-Edition/data"
+        self.gw_folder_path = "./data/data/"
         self.valid_corpora = ["nyt_eng"]
 
         self.input_max_length = 0
@@ -131,10 +132,12 @@ class GWDataProcessor(object):
             self.summary_max_length = md['summary_length']
             self.num_pairs = md['num_pairs']
         self.vectorizer.load_mapping()
+        self.pad_token_value = self.vectorizer.vectorize(self.pad_token)[0]
 
     def convert_to_tensors(self):
         pairs = []
         for filename in self.data_files:
+            print(filename)
             pairs.extend(self.convert_single_file_to_tensor(filename))
             if len(pairs) > self.num_to_store_per_file:
                 to_store = pairs[:self.num_to_store_per_file]
@@ -190,7 +193,8 @@ class GWDataProcessor(object):
                 with open("data/{}.json".format(file_idx), 'r') as f:
                     data = json.load(f) 
                     print(len(data))
-                    hlv = [d['headline_vec'] for d in data]
+                    hlv = [([self.pad_token_value] * self.pad_length) + d['headline_vec'] for d in data]
+                    #hlv = ([self.pad_token] * self.pad_length) + hlv
                     if text_cutoff_length is None:
                         tv = [d['text_vec'] for d in data]
                     else:
@@ -200,8 +204,10 @@ class GWDataProcessor(object):
                     print("current size: ", len(self.summaries))
             except FileNotFoundError as e:
                 break
+        
             file_idx += 1
 
+        #self.summary_max_length += self.pad_length
         if text_cutoff_length is not None:
             self.input_max_length = text_cutoff_length
 

@@ -25,7 +25,7 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
 
     embedding_size = 50
 
-    emb_matrix = util.load_embeddings_from_glove(embedding_size, dp.vectorizer)
+    emb_matrix = util.load_embeddings_from_glove(embedding_size, dp.vectorizer) #np.random.rand( embedding_size, dp.vectorizer.vocab_size() )#
 
     input_sentence_length = dp.input_sentence_length
     context_length = dp.pad_length
@@ -34,8 +34,11 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
 
     s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
             context_size = 3, input_sentence_length = input_sentence_length,
-            embedding_size = embedding_size, embedding_matrix = emb_matrix)
+            embedding_size = embedding_size, embedding_matrix = emb_matrix, batch_size = batch_size,
+            summary_length = dp.summary_max_length)
     #grad_shared, update = s.initialize()
+
+    print("Done building network")
 
     params = s.params
     cpd = s.f_conditional_probability_distribution
@@ -52,6 +55,7 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
     for epoch_id in range(epochs):
 
         # for the moment... save last batch for validation
+        print("EPOCH ID", epoch_id)
         for batch_id in range(num_batches-1):
             summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size)
 
@@ -94,5 +98,5 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
 
 if __name__ == "__main__":
     epochs = 15
-    batch_size = 128
-    train_model(data_folder, epochs, batch_size)
+    batch_size = 64
+    train_model(epochs, batch_size)

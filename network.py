@@ -141,7 +141,7 @@ class OutputLayer(object):
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
             context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.05,
-            encoder_type = 'attention'):
+            encoder_type = 'attention', batch_size = 10, summary_length = 10):
         assert(encoder_type in ['attention', 'bow'])
         self.encoder_type = encoder_type
         self.input_sentence_length = input_sentence_length 
@@ -153,8 +153,8 @@ class SummarizationNetwork(object):
         self.embedding_matrix = embedding_matrix
         self.l2_coefficient = l2_coefficient
 
-        self.summary_length = 8 
-        self.batch_size = 3 
+        self.summary_length = 8#summary_length
+        self.batch_size = 10#batch_size
 
         self.initialize()
 
@@ -225,8 +225,8 @@ class SummarizationNetwork(object):
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         regularization_cost = self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
 
-        self.get_batch_cost_unregularized = theano.function([docs, summaries], cost)
-
+        self.get_batch_cost_unregularized = theano.function([docs, summaries], cost, allow_input_downcast=True)
+        theano.printing.debugprint(cost)
         cost = cost + regularization_cost
 
         #cost = theano.printing.Print("cost")(cost)

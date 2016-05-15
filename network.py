@@ -146,7 +146,7 @@ class OutputLayer(object):
 class SummarizationNetwork(object):
     def __init__(self, input_sentence_length = 5, vocab_size = 4, embedding_size = 20,
             context_size = 3, hidden_layer_size = 10, embedding_matrix = None, l2_coefficient=0.05,
-            encoder_type = 'attention', batch_size = 10, summary_length = 10):
+            encoder_type = 'attention', batch_size = 10, summary_length = 10, num_batches = 10):
         assert(encoder_type in ['attention', 'bow'])
         self.encoder_type = encoder_type
         self.input_sentence_length = input_sentence_length 
@@ -158,8 +158,9 @@ class SummarizationNetwork(object):
         self.embedding_matrix = embedding_matrix
         self.l2_coefficient = l2_coefficient
 
-        self.summary_length = 8#summary_length
-        self.batch_size = 10#batch_size
+        self.summary_length = summary_length
+        self.batch_size = batch_size
+        self.num_batches = num_batches
 
         self.initialize()
 
@@ -202,7 +203,9 @@ class SummarizationNetwork(object):
         # calculate the probability of our current word appearing
         
         # Since we pad the input vectors, we start at C and go to len(y_original) + C
-        y_position_range = T.arange(self.context_size, self.summary_length + self.context_size)
+        y_position_range = T.arange(self.context_size, self.summary_length)
+
+        #print("the last index to be accessed will be ", self.summary_length + self.context_size)
 
         # We start by indexing into y
         # current_word = y[:, i]
@@ -211,7 +214,7 @@ class SummarizationNetwork(object):
         func = lambda y_pos, x, y: self.conditional_probability(x, y, y_pos)
 
         probabilities, _ = theano.scan(func, sequences=y_position_range,
-                                    non_sequences = [x, y], n_steps=self.summary_length)
+                                    non_sequences = [x, y], n_steps=self.summary_length - self.context_size)
 
         return -T.log(probabilities.T)
 
@@ -223,31 +226,37 @@ class SummarizationNetwork(object):
         probs, _ = theano.scan(func, sequences=[document_range], non_sequences=[documents,summaries])
         return probs.sum() 
 
-    def train_model_func(self, batch_size):
-        docs = T.imatrix('docs')
+    def train_model_func(self, batch_size, num_batches, summary_sz, input_sz):
         summaries = T.imatrix('summaries')
+        docs = T.imatrix('docs')
+
+        s = np.zeros((batch_size * num_batches, summary_sz))
+        d = np.zeros((batch_size * num_batches, input_sz))
+
+        summary_superbatch = theano.shared( s.astype(theano.config.floatX),
+                                           name = 's_summs', borrow = True )
+        doc_superbatch = theano.shared( d.astype(theano.config.floatX),
+                                        name = 's_docs', borrow = True )
+
+        self.ssb = summary_superbatch
+        self.dsb = doc_superbatch
 
         cost = self.negative_log_likelihood_batch(docs, summaries, batch_size)
         regularization_cost = self.l2_coefficient * sum([(p ** 2).sum() for p in self.params])
 
         self.get_batch_cost_unregularized = theano.function([docs, summaries], cost, allow_input_downcast=True)
-        theano.printing.debugprint(cost)
+        #theano.printing.debugprint(cost)
         cost = cost + regularization_cost
 
-        #cost = theano.printing.Print("cost")(cost)
-        #theano.pp(cost)
-        #self.params = [theano.printing.Print("...")(p) for p in self.params]
         params = {p.name: p for p in self.params} 
-        #print(list(params.values()))
-        #print(self.params)
         grads = T.grad(cost, self.params)
         #grads = theano.printing.Print("grads")(grads)
 
         # learning rate
         lr = T.scalar(name='lr')
-        gradient_update, network_update = optimisers.sgd_(lr, self.params,
-                                                                grads, docs, summaries, cost)  
-        return gradient_update, network_update
+        gradient_update = optimisers.sgd_(lr, self.params, grads, docs, summaries,
+                                                                cost, self.dsb, self.ssb, batch_size)
+        return gradient_update
 
     def normalize_embeddings_func(self, mode = "matrix"):
         embeddings = self.embedding_matrices
@@ -262,9 +271,28 @@ class SummarizationNetwork(object):
         return theano.function([], embeddings, updates=updates)
 
     def initialize(self):
-        self.gradient_update, self.network_update = self.train_model_func(self.batch_size)
+        self.gradient_update = self.train_model_func(self.batch_size, self.num_batches, self.summary_length, self.input_sentence_length)
+
+    def train_one_superbatch(self, dsb, ssb, learning_rate, num_batches):
+        #shared_docs, shared_summs = shared_dataset(documents, summaries)
+        self.dsb.set_value(dsb)
+        self.ssb.set_value(ssb)
+        print("setting shared variables...")
+        cost = 0
+        for i in range(num_batches):
+            c = self.gradient_update(learning_rate, i)
+            print(c)
+            cost += c
+            #self.network_update(learning_rate, i)
+
+        print("Cost after update: ", cost)
+
+        return cost
+
+
 
     def train_one_batch(self, documents, summaries, learning_rate, verbose = False):
+        shared_docs, shared_summs = shared_dataset(documents, summaries)
         cost = self.gradient_update(documents, summaries)
         self.network_update(learning_rate)
 

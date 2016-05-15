@@ -10,7 +10,7 @@ def validate(net, input_batch, summary_batch):
     return cost
 
 
-def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
+def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, batches_per_update=10):
     print("Loading data...")
     dp = util.GWDataProcessor(load_from_file=True)
     dp.load_tensors()
@@ -18,11 +18,9 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
 
     dp.calculate_network_parameters()
 
-    num_batches = dp.get_num_batches(batch_size)
+    num_batches = dp.get_num_batches(batch_size*batches_per_update)
 
     print("Calculating network parameters...")
-
-
     embedding_size = 50
 
     emb_matrix = util.load_embeddings_from_glove(embedding_size, dp.vectorizer) #np.random.rand( embedding_size, dp.vectorizer.vocab_size() )#
@@ -35,7 +33,7 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
     s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
             context_size = 3, input_sentence_length = input_sentence_length,
             embedding_size = embedding_size, embedding_matrix = emb_matrix, batch_size = batch_size,
-            summary_length = dp.summary_max_length)
+            summary_length = dp.summary_max_length, num_batches = batches_per_update)
     #grad_shared, update = s.initialize()
 
     print("Done building network")
@@ -57,9 +55,11 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
         # for the moment... save last batch for validation
         print("EPOCH ID", epoch_id)
         for batch_id in range(num_batches-1):
-            summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size)
+            summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size*batches_per_update)
 
-            s.train_one_batch(inputs, summaries, 0.1, True)
+            print(summaries.shape, inputs.shape)
+
+            s.train_one_superbatch(inputs, summaries, 0.1, batches_per_update)
 
             inpt = inputs[ex_idx, :].astype('int32')
             summ = summaries[ex_idx, :].astype('int32') # was doing .A1 before...
@@ -98,5 +98,5 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10):
 
 if __name__ == "__main__":
     epochs = 15
-    batch_size = 64
+    batch_size = 4 
     train_model(epochs, batch_size)

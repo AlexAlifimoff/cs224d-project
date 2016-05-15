@@ -60,10 +60,10 @@ def load_embeddings_from_glove(dimension, vectorizer):
     for word, index in mapping.items():
         try:
             vec = glove_embeddings[word]
+            emb_matrix[:, index] = np.array(vec)
         except KeyError as e:
             indices_to_replace.append(index)
 
-    emb_matrix[:, index] = np.array(vec)
 
     avg_vector = np.mean(emb_matrix, axis = 1)
 
@@ -76,12 +76,11 @@ def load_embeddings_from_glove(dimension, vectorizer):
 
 class GWDataProcessor(object):
     def __init__(self, load_from_file = False):
-        vparams = {"preserve_case": False}
-        self.vectorizer = vectorizer.TextVectorizer(vparams) 
-        self.pad_token = "PAD"
-        self.end_token = "endtok"
+        self.vectorizer = vectorizer.BetterVectorizer() 
+        self.pad_token = self.vectorizer.PAD 
+        self.end_token = self.vectorizer.EOS 
         
-        self.end_token_value = self.vectorizer.vectorize(self.end_token)[0]
+        self.end_token_value = self.vectorizer.EOS_value 
         self.pad_length = 3
         self.summaries = []
         self.inputs = []
@@ -91,7 +90,7 @@ class GWDataProcessor(object):
 
         self.num_to_store_per_file = 100000
 
-        self.gw_folder_path = "./data/data/"
+        self.gw_folder_path = "/afs/ir/data/linguistic-data/ldc/LDC2007T07_English-Gigaword-Third-Edition/data/"
         self.valid_corpora = ["nyt_eng"]
 
         self.input_max_length = 0
@@ -132,17 +131,29 @@ class GWDataProcessor(object):
             self.summary_max_length = md['summary_length']
             self.num_pairs = md['num_pairs']
         self.vectorizer.load_mapping()
-        self.pad_token_value = self.vectorizer.vectorize(self.pad_token)[0]
+        self.pad_token_value = self.vectorizer.PAD_value 
 
-    def convert_to_tensors(self):
+    def convert_to_tensors(self, num_files = 5):
         pairs = []
+        c = 0
+        for filename in self.data_files:
+            if c > num_files: break
+            print(filename)
+            self.convert_single_file_to_tensor(filename, count = True)
+            c += 1
+        print("Done compiling counts")
+        c = 0
         for filename in self.data_files:
             print(filename)
+            if c > num_files: break
             pairs.extend(self.convert_single_file_to_tensor(filename))
             if len(pairs) > self.num_to_store_per_file:
                 to_store = pairs[:self.num_to_store_per_file]
                 pairs = pairs[self.num_to_store_per_file:]
                 self.dump_to_json(to_store)
+            c += 1
+
+
         self.dump_to_json(pairs)
 
     def dump_to_json(self, pairs):
@@ -152,7 +163,7 @@ class GWDataProcessor(object):
             self.last_file_idx += 1
         self.save_metadata()
 
-    def convert_single_file_to_tensor(self, file_path):
+    def convert_single_file_to_tensor(self, file_path, count = False):
         pairs = []
         with gzip.open(file_path, 'rb') as f:
             content = f.read()
@@ -168,6 +179,14 @@ class GWDataProcessor(object):
                 first_three_paras = [p.text for p in paragraphs[:2]]
                 first_three_paras = ' '.join(first_three_paras)
                 first_three_paras = remove_escaped(first_three_paras)
+
+                if not self.pair_qualifies(headline, first_three_paras):
+                    continue
+
+                if count:
+                    self.vectorizer.count(first_three_paras)
+                    self.vectorizer.count(headline)
+                    continue
                 v_input = self.vectorizer.vectorize(first_three_paras)
                 v_summary = self.vectorizer.vectorize(headline)
                 self.input_max_length = max(self.input_max_length, len(v_input))
@@ -176,6 +195,11 @@ class GWDataProcessor(object):
                 pair = DataPair(headline, first_three_paras, v_summary, v_input)
                 pairs.append(pair)
         return [p.__dict__ for p in pairs]
+
+    def pair_qualifies(self, summ, text):
+        num_in_common = len((set(summ)).intersection(set(text)))
+        summ_len = len(summ)
+        return num_in_common > 0 and summ_len < 30
 
     def get_batch_size(self, num_batches):
         return int( self.num_pairs / num_batches)
@@ -189,6 +213,7 @@ class GWDataProcessor(object):
         file_idx = 0
         while True:
             try: 
+                if file_idx > 1: break
                 print("trying to load file... {}".format(file_idx))
                 with open("data/{}.json".format(file_idx), 'r') as f:
                     data = json.load(f) 
@@ -207,7 +232,7 @@ class GWDataProcessor(object):
         
             file_idx += 1
 
-        #self.summary_max_length += self.pad_length
+        self.summary_max_length += self.pad_length
         if text_cutoff_length is not None:
             self.input_max_length = text_cutoff_length
 

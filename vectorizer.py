@@ -44,6 +44,13 @@ class BetterVectorizer(object):
             else:
                 self.counts[t] = 1
 
+    def generate_reverse_mapping(self):
+        rm = {}
+        for token, val in self.mapping.items():
+            rm[val] = token
+        return rm 
+
+
     def vectorize(self, text):
         tokenized_text = self.tokenizer.tokenize(text)
         vectorized_text = []

@@ -1,16 +1,17 @@
 import network
 import util
 import numpy as np
+import baseline_logreg
 
 #np.set_printoptions(threshold='nan')
 
-def validate(net, input_batch, summary_batch):
-    cost = net.get_batch_cost_unregularized(input_batch, summary_batch)
+def validate(net, input_batch, summary_batch, imasks, smasks):
+    cost = net.get_batch_cost_unregularized(input_batch, summary_batch, imasks, smasks)
     print("Validation cost:", cost)
     return cost
 
 
-def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, batches_per_update=10):
+def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, batches_per_update=1, model = "BaselineLR"):
     print("Loading data...")
     dp = util.GWDataProcessor(load_from_file=True)
     dp.load_tensors()
@@ -29,48 +30,62 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
     context_length = dp.pad_length
 
     print("Building network...")
-
-    s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
-            context_size = 3, input_sentence_length = input_sentence_length,
+    if model == "Full":
+        s = network.SummarizationNetwork(vocab_size = dp.vectorizer.vocab_size() + 1,
+            context_size = context_length, input_sentence_length = input_sentence_length,
             embedding_size = embedding_size, embedding_matrix = emb_matrix, batch_size = batch_size,
             summary_length = dp.summary_max_length, num_batches = batches_per_update)
-    #grad_shared, update = s.initialize()
 
+    elif model == "BaselineLR":
+        s = baseline_logreg.LogRegBaseline(context_length, embedding_size, emb_matrix,
+            input_sentence_length, dp.vectorizer.vocab_size() + 1, dp.summary_max_length, batch_size,
+            num_batches = batches_per_update)
     print("Done building network")
 
     params = s.params
+    for p in params: print(p.get_value())
     cpd = s.f_conditional_probability_distribution
-    embedding_normalization_function = s.normalize_embeddings_func()
+    if model == "Full":
+        embedding_normalization_function = s.normalize_embeddings_func()
 
 
     ex_idx = 1 
 
     # validation inputs and summaries...
-    v_summaries, v_inputs = dp.get_tensors_for_batch(num_batches-1, batch_size=batch_size)
+    v_summaries, v_inputs, vs_masks, vi_masks = dp.get_tensors_for_batch(num_batches-1, batch_size=batch_size)
 
     v_summaries, v_inputs = v_summaries.astype('int32'), v_inputs.astype('int32')
 
-    for epoch_id in range(epochs):
+    best_val_cost = np.inf
+    lr = 0.0001
 
+    for epoch_id in range(epochs):
         # for the moment... save last batch for validation
         print("EPOCH ID", epoch_id)
         for batch_id in range(num_batches-1):
-            summaries, inputs = dp.get_tensors_for_batch(batch_id, batch_size=batch_size*batches_per_update)
+            summaries, inputs, smasks, imasks = dp.get_tensors_for_batch(batch_id, batch_size=batch_size*batches_per_update)
 
             print(summaries.shape, inputs.shape)
 
-            s.train_one_superbatch(inputs, summaries, 0.1, batches_per_update)
+            s.train_one_superbatch(inputs, summaries, imasks, smasks, lr, batches_per_update)
 
             inpt = inputs[ex_idx, :].astype('int32')
             summ = summaries[ex_idx, :].astype('int32') # was doing .A1 before...
 
             if batch_id % save_params_every == 0:
-                s.save("yohgnet_{}_{}.network".format(epoch_id, batch_id))
+                s.save("{}_{}_{}.network".format(s.__class__.__name__, epoch_id, batch_id))
 
             if batch_id % validate_every == 0:
-                validate(s, v_inputs, v_summaries)
+                vc = validate(s, v_inputs, v_summaries, vi_masks, vs_masks)
+                if batch_id == 0:
+                    if vc > best_val_cost:
+                        print("halving learning rate")
+                        lr = lr / 2.0
+                    else:
+                        print("updating best val cost")
+                        best_val_cost = vc
 
-            if epoch_id < 1 or batch_id % validate_every != 0: continue
+            if epoch_id < 0 or batch_id % validate_every != 0: continue
 
             rm = dp.vectorizer.generate_reverse_mapping()
 
@@ -98,5 +113,5 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
 
 if __name__ == "__main__":
     epochs = 15
-    batch_size = 4 
+    batch_size = 128 
     train_model(epochs, batch_size)

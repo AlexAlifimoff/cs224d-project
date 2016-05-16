@@ -24,12 +24,10 @@ def pad_list_of_matrices(matrices, max_dims = None):
                     'constant', constant_values=(0,0)) for m in matrices]
 
 def pad_list_of_indices(matrices, endtok, pad_length = None):
-    padded = []
     if pad_length is None: max_dims = maxlen(matrices)
     else: max_dims = pad_length
-    #print("max len:", max_dims)
-    #print(matrices[0])
-    return [m + (max_dims - len(m)) * [endtok] for m in matrices ]
+    masks = [(len(m) + 1) * [1.0] + (max_dims - len(m) - 1) * [0.0] if len(m) < max_dims else [1.0] * len(m) for m in matrices ]
+    return [m + (max_dims - len(m)) * [endtok] for m in matrices ], masks
 
 def load_embeddings_from_glove(dimension, vectorizer):
     valid_dimensions = [50, 100, 200, 300]
@@ -251,10 +249,10 @@ class GWDataProcessor(object):
         elif batch_size is not None: num_batches = int(num_examples / batch_size)
 
         start, end = batch_id * batch_size, (batch_id + 1) * batch_size
-        summs = pad_list_of_indices(self.summaries[start:end], self.end_token_value, self.summary_max_length)
-        texts = pad_list_of_indices(self.inputs[start:end], self.end_token_value, self.input_max_length)
+        summs, smasks = pad_list_of_indices(self.summaries[start:end], self.end_token_value, self.summary_max_length)
+        texts, tmasks = pad_list_of_indices(self.inputs[start:end], self.end_token_value, self.input_max_length)
 
-        return np.array(summs), np.array(texts)
+        return np.array(summs), np.array(texts), np.array(smasks), np.array(tmasks)
     
         
 

@@ -19,7 +19,8 @@ class EmbeddingsLayer(object):
     #
     def __init__(self, input_vec, context_size, embedding_size, vocabulary_size, flatten = True, emb_name = 'E', embedding_matrix = None):
         if embedding_matrix is None:
-            value = np.random.uniform(low=-0.02, high=0.02, size=(embedding_size, vocabulary_size))
+            epsilon = (6 / (embedding_size + vocabulary_size) ) ** 0.5
+            value = np.random.uniform(low=-epsilon, high=epsilon, size=(embedding_size, vocabulary_size))
         else: value = embedding_matrix
         self.E = theano.shared(
                 value = value.astype(theano.config.floatX),
@@ -33,6 +34,7 @@ class EmbeddingsLayer(object):
 
         self._output_function = self.E[:,input_vec]
         if flatten:
+            #print("I think I have input shape...", embedding_size, context_size)
             self.output = T.reshape(self._output_function, (embedding_size * context_size, 1))
         else:
             self.output = self._output_function

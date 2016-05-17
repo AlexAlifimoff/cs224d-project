@@ -2,6 +2,7 @@ import network
 import util
 import numpy as np
 import baseline_logreg
+import k_baseline_logreg
 
 #np.set_printoptions(threshold='nan')
 
@@ -37,9 +38,9 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
             summary_length = dp.summary_max_length, num_batches = batches_per_update)
 
     elif model == "BaselineLR":
-        s = baseline_logreg.LogRegBaseline(context_length, embedding_size, emb_matrix,
-            input_sentence_length, dp.vectorizer.vocab_size() + 1, dp.summary_max_length, batch_size,
-            num_batches = batches_per_update)
+        s = k_baseline_logreg.LogRegBaseline(context_length, embedding_size, emb_matrix,
+            input_sentence_length, dp.vectorizer.vocab_size(), dp.summary_max_length, batch_size,
+            num_batches = batches_per_update, eos_token = dp.vectorizer.EOS_value)
     print("Done building network")
 
     params = s.params
@@ -71,19 +72,25 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
 
             inpt = inputs[ex_idx, :].astype('int32')
             summ = summaries[ex_idx, :].astype('int32') # was doing .A1 before...
+            inpt_ = np.expand_dims(inpt, axis=0)
+            summ_ = np.expand_dims(summ, axis=0) 
 
             if batch_id % save_params_every == 0:
-                s.save("{}_{}_{}.network".format(s.__class__.__name__, epoch_id, batch_id))
+                #s.save("{}_{}_{}.network".format(s.__class__.__name__, epoch_id, batch_id))
+                pass
 
             if batch_id % validate_every == 0:
-                vc = validate(s, v_inputs, v_summaries, vi_masks, vs_masks)
-                if batch_id == 0:
-                    if vc > best_val_cost:
-                        print("halving learning rate")
-                        lr = lr / 2.0
-                    else:
-                        print("updating best val cost")
-                        best_val_cost = vc
+                if model == 'BaselineLR':
+                    s.validate(v_inputs, v_summaries)
+                else:   
+                    vc = validate(s, v_inputs, v_summaries, vi_masks, vs_masks)
+                    if batch_id == 0:
+                        if vc > best_val_cost:
+                           print("halving learning rate")
+                           lr = lr / 2.0
+                        else:
+                            print("updating best val cost")
+                            best_val_cost = vc
 
             if epoch_id < 0 or batch_id % validate_every != 0: continue
 
@@ -95,10 +102,12 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
                 summ_words = [rm[tk] for tk in summ]
                 summ_so_far = summ_words[:idx]
 
+                if summ_so_far[-1] == '<eos>': break
                 print(idx, summ_so_far)
 
-                dist = cpd(inpt, summ, idx)
 
+                dist = cpd(inpt_, summ_, idx).T
+                print("dist\n", dist)
                 indices = np.argsort(dist.T)[:10]
                 print(indices)
                 for index in indices[0][-10:]:
@@ -106,6 +115,7 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
                 correct_word_token = summ_words[idx]
                 correct_word_idx = dp.vectorizer.mapping[correct_word_token]
                 print("correct word score:", dist[correct_word_idx], correct_word_token)
+
 
         #embedding_normalization_function()
  

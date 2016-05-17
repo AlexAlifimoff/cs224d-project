@@ -40,6 +40,7 @@ class LogRegBaseline(object):
         self.summary_length = summary_length
         self.num_batches = num_batches
         self.eos_token = eos_token
+        self.hidden_sz = 100
 
         self.initialize(batch_sz)
 
@@ -57,9 +58,11 @@ class LogRegBaseline(object):
 
         model = Sequential()
         model.add(Merge([y_embedding, x_embedding], mode='concat', concat_axis=1))
-        model.add(Dense(self.vocab_sz,
+        model.add(Dense(self.hidden_sz,
             input_dim = (self.summary_length + self.input_length) * self.embedding_size,
-            activation = 'softmax'))
+            activation = 'tanh'))
+
+        model.add(Dense(self.vocab_sz, input_dim = self.hidden_sz, activation = 'softmax'))
 
         model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
         self.model = model

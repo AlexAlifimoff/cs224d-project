@@ -2,7 +2,7 @@ import vectorizer
 import os
 import json
 import numpy as np
-import network
+#import network
 import gzip
 import xml.etree.ElementTree as ET
 
@@ -89,7 +89,12 @@ class GWDataProcessor(object):
         self.num_to_store_per_file = 100000
 
         self.gw_folder_path = "/afs/ir/data/linguistic-data/ldc/LDC2007T07_English-Gigaword-Third-Edition/data/"
-        self.valid_corpora = ["nyt_eng"]
+        self.valid_corpora = ["nyt_eng", "apw_eng", "xin_eng", "cna_eng", "ltw_eng", "afp_eng"]
+
+        self.src_sentences = []
+        self.tgt_sentences = []
+        self.src_dev_sentences = []
+        self.tgt_dev_sentences = []
 
         self.input_max_length = 0
         self.summary_max_length= 0
@@ -135,7 +140,8 @@ class GWDataProcessor(object):
         pairs = []
         c = 0
         for filename in self.data_files:
-            if c > num_files: break
+            break
+            #if c > num_files: break
             print(filename)
             self.convert_single_file_to_tensor(filename, count = True)
             c += 1
@@ -143,16 +149,35 @@ class GWDataProcessor(object):
         c = 0
         for filename in self.data_files:
             print(filename)
-            if c > num_files: break
+            #if c > num_files: break
             pairs.extend(self.convert_single_file_to_tensor(filename))
             if len(pairs) > self.num_to_store_per_file:
                 to_store = pairs[:self.num_to_store_per_file]
                 pairs = pairs[self.num_to_store_per_file:]
                 self.dump_to_json(to_store)
+
+                # write raw data for seq2seq model
+                save_for_dev = list(np.random.permutation(self.num_to_store_per_file))[:int(self.num_to_store_per_file * 0.001)]
+                
+                print(len(save_for_dev))
+                for data, dev, ext in [(self.src_sentences, self.src_dev_sentences, 'src'), (self.tgt_sentences, self.tgt_dev_sentences, 'tgt')]:
+                    with open("data.{}".format(ext), "a") as f:
+                        for i, line in enumerate(data[:self.num_to_store_per_file]):
+                            if i not in save_for_dev:
+                                f.write(line.encode('ascii', 'ignore') + "\n")
+                            else:
+                                dev.append(line)
+                self.src_sentences = self.src_sentences[self.num_to_store_per_file:]
+                self.tgt_sentences = self.tgt_sentences[self.num_to_store_per_file:]
             c += 1
-
-
         self.dump_to_json(pairs)
+        with open("dev.src", "w") as f:
+            for line in self.src_dev_sentences:
+                f.write( line + "\n" )
+        with open("dev.tgt", "w") as f:
+            for line in self.tgt_dev_sentences:
+                f.write( line + "\n" )
+
 
     def dump_to_json(self, pairs):
         with open('./data/{}.json'.format(self.last_file_idx), 'w') as jf:
@@ -171,39 +196,44 @@ class GWDataProcessor(object):
             for doc in root.findall("DOC"): 
                 headline = doc.find("HEADLINE")
                 if headline is None: continue
-                headline = remove_escaped(headline.text)
+                headline = remove_escaped((headline.text).encode('ascii', 'ignore'))
                 text = doc.find("TEXT")
                 paragraphs = text.findall("P")
                 first_three_paras = [p.text for p in paragraphs[:2]]
                 first_three_paras = ' '.join(first_three_paras)
-                first_three_paras = remove_escaped(first_three_paras)
+                first_three_paras = remove_escaped(first_three_paras.encode('ascii', 'ignore'))
 
                 if not self.pair_qualifies(headline, first_three_paras):
                     continue
+
+                self.src_sentences.append(first_three_paras)
+                self.tgt_sentences.append(headline)
 
                 if count:
                     self.vectorizer.count(first_three_paras)
                     self.vectorizer.count(headline)
                     continue
-                v_input = self.vectorizer.vectorize(first_three_paras)
-                v_summary = self.vectorizer.vectorize(headline)
-                self.input_max_length = max(self.input_max_length, len(v_input))
-                self.summary_max_length = max(self.summary_max_length, len(v_summary))
+                #v_input = self.vectorizer.vectorize(first_three_paras)
+                #v_summary = self.vectorizer.vectorize(headline)
+                #self.input_max_length = max(self.input_max_length, len(v_input))
+                #self.summary_max_length = max(self.summary_max_length, len(v_summary))
                 self.num_pairs += 1
-                pair = DataPair(headline, first_three_paras, v_summary, v_input)
+                #pair = DataPair(headline, first_three_paras, v_summary, v_input)
+                pair = DataPair(headline, first_three_paras, None, None) 
                 pairs.append(pair)
         return [p.__dict__ for p in pairs]
 
     def pair_qualifies(self, summ, text):
         num_in_common = len((set(summ)).intersection(set(text)))
         summ_len = len(summ)
-        return num_in_common > 0 and summ_len < 30
+        editorialized = summ.startswith("UNDATED") or summ.startswith("COMMENTARY")
+        return num_in_common > 0 and summ_len < 40 and not editorialized 
 
     def get_batch_size(self, num_batches):
-        return int( self.num_pairs / num_batches)
+        return int( len(self.summaries) / num_batches)
 
     def get_num_batches(self, batch_size):
-        return int( self.num_pairs / batch_size)
+        return int( len(self.summaries) / batch_size)
 
     def load_tensors(self, text_cutoff_length=100):
         self.summaries = []
@@ -267,7 +297,9 @@ def remove_escaped(s):
     rep = {
         "\\n": " ",
         "\\'": "'",
-        '\\"': '"'
+        '\\"': '"',
+        "\n": " ",
+        "\xed": " "
         }
     for k, v in rep.items():
         s = s.replace(k, v)

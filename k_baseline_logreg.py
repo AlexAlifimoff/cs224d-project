@@ -3,6 +3,7 @@ from keras.layers.embeddings import Embedding
 from keras.models import Sequential
 from keras.layers.core import *
 from keras.optimizers import *
+from keras.regularizers import *
 import numpy as np
 
 def generate_input_pairs_for_data(x, y, context_size, eos_token):
@@ -31,7 +32,8 @@ def generate_input_pairs_for_data(x, y, context_size, eos_token):
 
 class LogRegBaseline(object):
     def __init__(self, context_size, embedding_size, embedding_matrix, input_length,
-                    vocab_sz, summary_length, batch_sz, num_batches = 10, eos_token = None):
+                    vocab_sz, summary_length, batch_sz, num_batches = 10, eos_token = None,
+                    initialize = True):
         self.context_size = context_size
         self.embedding_size = embedding_size
         self.embedding_matrix = embedding_matrix
@@ -42,8 +44,9 @@ class LogRegBaseline(object):
         self.eos_token = eos_token
         self.hidden_sz = 100
 
-        self.initialize(batch_sz)
+        if initialize: self.initialize(batch_sz)
 
+        self.f_conditional_probability_distribution = self.conditional_probability_distribution 
 
         self.params = []
 
@@ -56,18 +59,27 @@ class LogRegBaseline(object):
         x_embedding.add(Embedding(self.vocab_sz, self.embedding_size, weights = [self.embedding_matrix.T], input_length=self.input_length)) 
         x_embedding.add(Flatten())
 
+        x_emb_output_sz = self.input_length
+
+        if True:
+            x_emb_output_sz = 50
+            x_embedding.add(Dense(x_emb_output_sz, input_dim = self.input_length,
+                            W_regularizer=l2(0.01), activation = 'tanh'))
+
         model = Sequential()
         model.add(Merge([y_embedding, x_embedding], mode='concat', concat_axis=1))
         model.add(Dense(self.hidden_sz,
-            input_dim = (self.summary_length + self.input_length) * self.embedding_size,
+            input_dim = (self.summary_length + x_emb_output_sz) * self.embedding_size,
+            W_regularizer=l2(0.01),
             activation = 'tanh'))
 
-        model.add(Dense(self.vocab_sz, input_dim = self.hidden_sz, activation = 'softmax'))
+        model.add(Dense(self.vocab_sz, input_dim = self.hidden_sz,
+                        W_regularizer=l2(0.01),
+                        activation = 'softmax'))
 
-        model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
+        model.compile(Adagrad(), 'sparse_categorical_crossentropy', metrics=['accuracy'])
         self.model = model
 
-        self.f_conditional_probability_distribution = self.conditional_probability_distribution 
 
     def conditional_probability_distribution(self, inpt, summ, idx):
         idx = idx - self.context_size
@@ -86,3 +98,15 @@ class LogRegBaseline(object):
         cost = self.model.test_on_batch([y, x], labels)
 
         print("validate cost: ", cost)
+
+    def save(self,name):
+        json_string = self.model.to_json()
+        open(name + '.json', 'w').write(json_string)
+        self.model.save_weights(name + '.h5', overwrite=True)
+
+    def load(self,name):
+        from keras.models import model_from_json
+        self.model = model_from_json(open(name + '.json').read())
+        self.model.load_weights(name + '.h5')
+        self.model.compile(Adagrad(), 'sparse_categorical_crossentropy', metrics=['accuracy'])
+        print("done loading") 

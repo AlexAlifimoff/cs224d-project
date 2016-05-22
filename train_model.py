@@ -12,7 +12,7 @@ def validate(net, input_batch, summary_batch, imasks, smasks):
     return cost
 
 
-def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, batches_per_update=1, model = "BaselineLR"):
+def train_model(epochs, batch_size, save_params_every = 100, validate_every=100, batches_per_update=1, model = "BaselineLR"):
     print("Loading data...")
     dp = util.GWDataProcessor(load_from_file=True)
     dp.load_tensors()
@@ -40,7 +40,10 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
     elif model == "BaselineLR":
         s = k_baseline_logreg.LogRegBaseline(context_length, embedding_size, emb_matrix,
             input_sentence_length, dp.vectorizer.vocab_size(), dp.summary_max_length, batch_size,
-            num_batches = batches_per_update, eos_token = dp.vectorizer.EOS_value)
+            num_batches = batches_per_update, eos_token = dp.vectorizer.EOS_value, initialize = False)
+        s.load("LogRegBaseline_3_1400.network")
+        start_epoch = 3 
+        start_batch = 1400
     print("Done building network")
 
     params = s.params
@@ -53,6 +56,7 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
     ex_idx = 1 
 
     # validation inputs and summaries...
+    print(batch_size, num_batches - 1)
     v_summaries, v_inputs, vs_masks, vi_masks = dp.get_tensors_for_batch(num_batches-1, batch_size=batch_size)
 
     v_summaries, v_inputs = v_summaries.astype('int32'), v_inputs.astype('int32')
@@ -60,10 +64,12 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
     best_val_cost = np.inf
     lr = 0.0001
 
-    for epoch_id in range(epochs):
+    for epoch_id in range(start_epoch,epochs):
         # for the moment... save last batch for validation
         print("EPOCH ID", epoch_id)
-        for batch_id in range(num_batches-1):
+        if epoch_id == start_epoch: start_batch_ = start_batch
+        else: start_batch_ = 0
+        for batch_id in range(start_batch_, num_batches-1):
             summaries, inputs, smasks, imasks = dp.get_tensors_for_batch(batch_id, batch_size=batch_size*batches_per_update)
 
             print(summaries.shape, inputs.shape)
@@ -76,11 +82,11 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
             summ_ = np.expand_dims(summ, axis=0) 
 
             if batch_id % save_params_every == 0:
-                #s.save("{}_{}_{}.network".format(s.__class__.__name__, epoch_id, batch_id))
-                pass
+                s.save("{}_{}_{}.network".format(s.__class__.__name__, epoch_id, batch_id))
 
             if batch_id % validate_every == 0:
                 if model == 'BaselineLR':
+                    print(v_inputs, v_summaries)
                     s.validate(v_inputs, v_summaries)
                 else:   
                     vc = validate(s, v_inputs, v_summaries, vi_masks, vs_masks)
@@ -122,6 +128,6 @@ def train_model(epochs, batch_size, save_params_every = 10, validate_every=10, b
 
 
 if __name__ == "__main__":
-    epochs = 15
+    epochs = 25
     batch_size = 128 
     train_model(epochs, batch_size)

@@ -1,14 +1,3 @@
-"""Binary for training translation models and decoding from them.
-Running this program without --decode will download the WMT corpus into
-the directory specified as --data_dir and tokenize it in a very basic way,
-and then start training a model saving checkpoints to --train_dir.
-Running with --decode starts an interactive loop so you can see how
-the current checkpoint translates English sentences into French.
-See the following papers for more information on neural translation models.
- * http://arxiv.org/abs/1409.3215
- * http://arxiv.org/abs/1409.0473
- * http://arxiv.org/abs/1412.2007
-"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -36,17 +25,19 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0,
                           "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 64,
                             "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("size", 256, "Size of each model layer.")
-tf.app.flags.DEFINE_integer("num_layers", 2, "Number of layers in the model.")
-tf.app.flags.DEFINE_integer("vocab_size", 40000, "Vocabulary size.")
+tf.app.flags.DEFINE_integer("size", 512, "Size of each model layer.")
+tf.app.flags.DEFINE_integer("num_layers", 3, "Number of layers in the model.")
+tf.app.flags.DEFINE_integer("vocab_size", 60000, "Vocabulary size.")
 tf.app.flags.DEFINE_string("data_dir", "./", "Data directory")
 tf.app.flags.DEFINE_string("train_dir", "./train", "Training directory.")
-tf.app.flags.DEFINE_string("chkpt_file_name", "two_layer_256_gru", "Training directory.")
+tf.app.flags.DEFINE_string("chkpt_file_name", "three_layer_512_lstm", "Training directory.")
 tf.app.flags.DEFINE_integer("max_train_data_size", 0,
                             "Limit on the size of training data (0: no limit).")
 tf.app.flags.DEFINE_integer("steps_per_checkpoint", 200,
                             "How many training steps to do per checkpoint.")
-tf.app.flags.DEFINE_boolean("decode", False,
+tf.app.flags.DEFINE_boolean("lstm", True,
+                            "Set to True for lstm instead of gru.")
+tf.app.flags.DEFINE_boolean("decode", True,
                             "Set to True for interactive decoding.")
 tf.app.flags.DEFINE_boolean("self_test", False,
                             "Run a self-test if this is set to True.")
@@ -55,7 +46,8 @@ FLAGS = tf.app.flags.FLAGS
 
 # We use a number of buckets and pad to the closest one for efficiency.
 # See seq2seq_model.Seq2SeqModel for details of how they work.
-_buckets = [(5, 20), (10, 25), (20, 50), (30, 70), (40, 100)]
+#_buckets = [(5, 20), (10, 25), (20, 50), (30, 70), (40, 100)]
+_buckets = [(20, 5), (40, 7), (50, 10), (60, 15), (80, 20), (100, 30)]
 
 
 def read_data(source_path, target_path, max_size=None):
@@ -100,8 +92,9 @@ def create_model(session, forward_only):
       FLAGS.vocab_size, FLAGS.vocab_size, _buckets,
       FLAGS.size, FLAGS.num_layers, FLAGS.max_gradient_norm, FLAGS.batch_size,
       FLAGS.learning_rate, FLAGS.learning_rate_decay_factor,
-      forward_only=forward_only)
+      forward_only=forward_only, use_lstm=FLAGS.lstm)
   ckpt = tf.train.get_checkpoint_state(FLAGS.train_dir)
+  print(ckpt)
   if ckpt and tf.gfile.Exists(ckpt.model_checkpoint_path):
     print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
     model.saver.restore(session, ckpt.model_checkpoint_path)
@@ -112,9 +105,7 @@ def create_model(session, forward_only):
 
 
 def train():
-  """Train a en->fr translation model using WMT data."""
-  # Prepare WMT data.
-  print("Preparing WMT data in %s" % FLAGS.data_dir)
+  print("Preparing Gigaword data in %s" % FLAGS.data_dir)
   src_train, tgt_train, src_dev, tgt_dev, _, _ = data_utils.prepare_data(
       FLAGS.data_dir, FLAGS.vocab_size, tokenizer = TweetTokenizer(preserve_case = False).tokenize)
 
@@ -218,14 +209,14 @@ def decode():
       # If there is an EOS symbol in outputs, cut them at that point.
       if data_utils.EOS_ID in outputs:
         outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-      # Print out French sentence corresponding to outputs.
+
       print(" ".join([tf.compat.as_str(rev_vocab[output]) for output in outputs]))
       print("> ", end="")
       sys.stdout.flush()
       sentence = sys.stdin.readline()
 
-def decode_sentences(list_of_sentences):
-    outputs_ = []
+def decode_sentences(doc_sent_dict):
+    outputs_ ={} 
     with tf.Session() as sess:
         # Create model and load parameters.
         model = create_model(sess, True)
@@ -235,9 +226,10 @@ def decode_sentences(list_of_sentences):
         vocab_path = "./data.vocab" 
         vocab, rev_vocab  = data_utils.initialize_vocabulary(vocab_path)
 
-        for sentence in sentences:
+        for doc, sentence in doc_sent_dict.items():
           # Get token-ids for the input sentence.
-          token_ids = data_utils.sentence_to_token_ids(tf.compat.as_bytes(sentence), vocab)
+          token_ids = data_utils.sentence_to_token_ids(tf.compat.as_bytes(sentence), vocab,
+                  tokenizer = TweetTokenizer(preserve_case=False).tokenize)[:99]
           # Which bucket does it belong to?
           bucket_id = min([b for b in xrange(len(_buckets))
                        if _buckets[b][0] > len(token_ids)])
@@ -252,11 +244,12 @@ def decode_sentences(list_of_sentences):
           # If there is an EOS symbol in outputs, cut them at that point.
           if data_utils.EOS_ID in outputs:
             outputs = outputs[:outputs.index(data_utils.EOS_ID)]
-          # Print out French sentence corresponding to outputs.
+
           output = " ".join([tf.compat.as_str(rev_vocab[output]) for output in outputs])
-          outputs_.append(output_)
-          sys.stdout.flush()
-          sentence = sys.stdin.readline()
+          outputs_[doc] = output
+          print(output)
+          #sys.stdout.flush()
+          #sentence = sys.stdin.readline()
     return outputs_
 
 
